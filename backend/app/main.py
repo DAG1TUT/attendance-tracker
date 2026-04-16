@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -35,6 +36,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def ip_guard(request: Request, call_next):
+    if not settings.allowed_networks.strip():
+        return await call_next(request)
+    ip_str = (request.headers.get("X-Forwarded-For") or request.client.host).split(",")[0].strip()
+    try:
+        addr = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return JSONResponse({"detail": "Доступ запрещён"}, status_code=403)
+    for cidr in settings.allowed_networks.split(","):
+        if addr in ipaddress.ip_network(cidr.strip(), strict=False):
+            return await call_next(request)
+    return JSONResponse({"detail": "Доступ разрешён только из сети кафе"}, status_code=403)
 
 API_PREFIX = "/api/v1"
 
