@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#6c63ff" />
+  <title>Администратор — Учёт времени</title>
+  <link rel="stylesheet" href="/static/admin.css" />
+</head>
+<body>
+
+<div id="alert-global" class="alert" style="position:fixed;top:16px;right:16px;z-index:200;max-width:340px;"></div>
+
+<div class="shell">
+
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <h2>☕ Учёт времени</h2>
+      <p id="admin-name" style="color:var(--muted);font-size:12px;">Администратор</p>
+    </div>
+
+    <button id="nav-dashboard"  class="nav-item" onclick="showTab('dashboard')">
+      <span class="nav-icon">📊</span> Сегодня
+    </button>
+    <button id="nav-employees" class="nav-item" onclick="showTab('employees')">
+      <span class="nav-icon">👥</span> Сотрудники
+    </button>
+    <button id="nav-logs"      class="nav-item" onclick="showTab('logs')">
+      <span class="nav-icon">📋</span> История
+    </button>
+    <button id="nav-suspicious" class="nav-item" onclick="showTab('suspicious')">
+      <span class="nav-icon">⚠️</span> Подозрительные
+    </button>
+
+    <div class="sidebar-footer">
+      <button class="logout-btn" onclick="doLogout()">Выйти →</button>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- Dashboard page -->
+    <div id="page-dashboard" class="tab-page">
+      <div class="page-title">📊 Сводка за сегодня</div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="label">На месте</div>
+          <div class="value green" id="stat-present">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Отсутствуют</div>
+          <div class="value red" id="stat-absent">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Опоздали</div>
+          <div class="value yellow" id="stat-late">—</div>
+        </div>
+      </div>
+
+      <div class="today-cols">
+        <div class="today-list-wrap">
+          <div class="today-list-title">✅ Присутствуют</div>
+          <div id="list-present"><div class="empty">Загрузка...</div></div>
+        </div>
+        <div class="today-list-wrap">
+          <div class="today-list-title">❌ Отсутствуют</div>
+          <div id="list-absent"><div class="empty">Загрузка...</div></div>
+        </div>
+      </div>
+
+      <div class="today-list-wrap" style="margin-top:16px;">
+        <div class="today-list-title">🕐 Опоздали</div>
+        <div id="list-late"><div class="empty">Загрузка...</div></div>
+      </div>
+    </div>
+
+    <!-- Employees page -->
+    <div id="page-employees" class="tab-page">
+      <div class="section-header">
+        <div class="page-title" style="margin-bottom:0">👥 Сотрудники</div>
+        <button class="btn btn-primary" onclick="openCreateModal()">+ Добавить</button>
+      </div>
+
+      <div class="table-wrap" style="margin-top:16px;">
+        <table>
+          <thead>
+            <tr>
+              <th>Имя</th>
+              <th>Телефон</th>
+              <th>Роль</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="employees-tbody">
+            <tr><td colspan="5" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Logs page -->
+    <div id="page-logs" class="tab-page">
+      <div class="page-title">📋 История отметок</div>
+
+      <div class="filter-bar">
+        <input type="date" id="filter-date-from" placeholder="С даты" />
+        <input type="date" id="filter-date-to" placeholder="По дату" />
+        <input type="number" id="filter-user" placeholder="ID сотрудника" style="width:140px" />
+        <button class="btn btn-primary" onclick="loadLogs()">Применить</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('filter-date-from').value='';document.getElementById('filter-date-to').value='';document.getElementById('filter-user').value='';loadLogs()">Сбросить</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Сотрудник</th>
+              <th>Действие</th>
+              <th>Время</th>
+              <th>IP</th>
+              <th>Device ID</th>
+              <th>Статус</th>
+              <th>User-Agent</th>
+            </tr>
+          </thead>
+          <tbody id="logs-tbody">
+            <tr><td colspan="7" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Suspicious page -->
+    <div id="page-suspicious" class="tab-page">
+      <div class="page-title">⚠️ Подозрительные события</div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Сотрудник</th>
+              <th>Действие</th>
+              <th>Время</th>
+              <th>IP</th>
+              <th>Причина</th>
+              <th>Device ID</th>
+            </tr>
+          </thead>
+          <tbody id="suspicious-tbody">
+            <tr><td colspan="6" class="empty">Загрузка...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Employee Modal ── -->
+<div id="emp-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Сотрудник</h3>
+    <div id="alert-emp" class="alert"></div>
+    <input type="hidden" id="emp-id" />
+    <div class="form-group">
+      <label>Имя</label>
+      <input id="emp-name" type="text" placeholder="Алина Смирнова" />
+    </div>
+    <div class="form-group">
+      <label>Телефон</label>
+      <input id="emp-phone" type="tel" placeholder="+79001234567" />
+    </div>
+    <div class="form-group">
+      <label>Пароль <span style="color:var(--muted)">(оставьте пустым, чтобы не менять)</span></label>
+      <input id="emp-password" type="password" placeholder="••••••••" autocomplete="new-password" />
+    </div>
+    <div class="form-group">
+      <label>Роль</label>
+      <select id="emp-role">
+        <option value="employee">Сотрудник</option>
+        <option value="admin">Администратор</option>
+      </select>
+    </div>
+    <div class="form-group" id="emp-active-group" style="display:none">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input id="emp-active" type="checkbox" checked />
+        Активен
+      </label>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeEmpModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveEmployee()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/admin.js"></script>
+</body>
+</html>

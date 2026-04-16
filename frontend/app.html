@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#6c63ff" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Приход / Уход" />
+  <title>Учёт времени</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+
+  <!-- ── LOGIN SCREEN ── -->
+  <div id="login-screen" class="screen">
+    <div class="card">
+      <div class="logo">
+        <div class="logo-icon">☕</div>
+        <h1>Учёт рабочего времени</h1>
+        <p>Войдите, чтобы отметить приход</p>
+      </div>
+
+      <div id="alert" class="alert"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="phone">Номер телефона</label>
+          <input
+            id="phone"
+            type="tel"
+            placeholder="+7 900 000 00 00"
+            autocomplete="username"
+            inputmode="tel"
+            required
+          />
+        </div>
+        <div class="form-group">
+          <label for="password">Пароль</label>
+          <input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+            required
+          />
+        </div>
+        <button id="btn-login" type="submit" class="btn btn-primary">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── MAIN SCREEN ── -->
+  <div id="main-screen" class="screen">
+    <div class="card">
+
+      <!-- User info -->
+      <div class="user-info">
+        <div>
+          <div class="user-name" id="user-name">—</div>
+          <div class="user-role" id="user-role">Сотрудник</div>
+        </div>
+        <button class="logout-btn" id="logout-btn" title="Выйти">Выйти →</button>
+      </div>
+
+      <!-- Clock -->
+      <div class="time-display">
+        <div class="time" id="clock">--:--</div>
+        <div class="date" id="clock-date"></div>
+      </div>
+
+      <!-- Status -->
+      <div style="text-align:center;">
+        <span class="status-badge unknown" id="status-badge">
+          <span class="dot"></span> Загрузка...
+        </span>
+      </div>
+
+      <div id="alert" class="alert"></div>
+
+      <!-- Action buttons -->
+      <div class="action-area">
+        <button id="btn-checkin" class="btn btn-green" disabled>✅ Пришёл</button>
+        <button id="btn-checkout" class="btn btn-red" disabled>🚪 Ушёл</button>
+      </div>
+
+      <!-- History -->
+      <div class="history-section">
+        <div class="history-title">История сегодня</div>
+        <ul class="history-list" id="history-list">
+          <li style="color:var(--muted);font-size:14px;padding:12px 0;">Загрузка...</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

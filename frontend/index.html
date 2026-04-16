@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Учёт времени</title>
+  <script>
+    // Redirect based on role stored in localStorage
+    const role = localStorage.getItem('role');
+    if (role === 'admin') {
+      window.location.replace('/admin.html');
+    } else if (role === 'employee') {
+      window.location.replace('/app.html');
+    } else {
+      window.location.replace('/app.html');
+    }
+  </script>
+</head>
+<body></body>
+</html>
