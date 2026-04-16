@@ -42,9 +42,15 @@ app.add_middleware(
 async def ip_guard(request: Request, call_next):
     if not settings.allowed_networks.strip():
         return await call_next(request)
+    # Railway healthcheck comes from internal IP — exempt it
     if request.url.path == "/api/v1/health":
         return await call_next(request)
-    ip_str = (request.headers.get("X-Forwarded-For") or request.client.host).split(",")[0].strip()
+    # Fastly CDN always sets X-Forwarded-For to the real client IP
+    # request.client.host is Railway's internal proxy — not useful
+    xff = request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP")
+    if not xff:
+        return JSONResponse({"detail": "Доступ разрешён только из сети кафе"}, status_code=403)
+    ip_str = xff.split(",")[0].strip()
     try:
         addr = ipaddress.ip_address(ip_str)
     except ValueError:
