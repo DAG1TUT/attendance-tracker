@@ -66,6 +66,16 @@ async def health() -> dict:
     return {"status": "ok", "service": "Attendance Tracker"}
 
 
+@app.get("/api/v1/debug-ip")
+async def debug_ip(request: Request) -> dict:
+    return {
+        "x_forwarded_for": request.headers.get("X-Forwarded-For"),
+        "x_real_ip": request.headers.get("X-Real-IP"),
+        "client_host": request.client.host,
+        "allowed_networks": settings.allowed_networks,
+    }
+
+
 # ── Serve frontend static files ───────────────────────────────────────────────
 # When running from project root with PYTHONPATH=backend, frontend/ is at CWD/frontend
 # When running from Docker (CMD copies frontend/ to static/), check both locations
