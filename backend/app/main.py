@@ -42,6 +42,8 @@ app.add_middleware(
 async def ip_guard(request: Request, call_next):
     if not settings.allowed_networks.strip():
         return await call_next(request)
+    if request.url.path == "/api/v1/health":
+        return await call_next(request)
     ip_str = (request.headers.get("X-Forwarded-For") or request.client.host).split(",")[0].strip()
     try:
         addr = ipaddress.ip_address(ip_str)
