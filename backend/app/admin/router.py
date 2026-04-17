@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -236,18 +237,26 @@ async def stats_today(
     db: Annotated[asyncpg.Pool, Depends(get_db)],
     _: Annotated[dict, AdminOnly],
 ) -> dict:
+    tz = ZoneInfo(settings.timezone)
     shift_total_minutes = settings.shift_start_hour * 60 + settings.late_threshold_minutes
+
+    # Today's date in Moscow timezone
+    today_moscow = datetime.now(tz).date()
+
     async with db.acquire() as conn:
         all_employees = await conn.fetch(
             """SELECT id, name FROM users
                WHERE is_active = TRUE AND role = 'employee' AND status = 'active'
                ORDER BY name"""
         )
+        # Find first check-in today (in Moscow time)
         today_checkins = await conn.fetch(
             """SELECT DISTINCT ON (user_id) user_id, timestamp
                FROM attendance_logs
-               WHERE action = 'check_in' AND timestamp >= NOW()::date
-               ORDER BY user_id, timestamp ASC"""
+               WHERE action = 'check_in'
+                 AND (timestamp AT TIME ZONE $1)::date = $2
+               ORDER BY user_id, timestamp ASC""",
+            settings.timezone, today_moscow,
         )
 
     checkin_map = {r["user_id"]: r["timestamp"] for r in today_checkins}
@@ -258,8 +267,10 @@ async def stats_today(
             absent.append(TodayEntry(user_id=uid, name=name))
         else:
             ts: datetime = checkin_map[uid]
-            checked_in_str = ts.strftime("%H:%M")
-            entry_minutes = ts.hour * 60 + ts.minute
+            # Convert UTC timestamp to Moscow time for display and late check
+            ts_moscow = ts.astimezone(tz)
+            checked_in_str = ts_moscow.strftime("%H:%M")
+            entry_minutes = ts_moscow.hour * 60 + ts_moscow.minute
             if entry_minutes > shift_total_minutes:
                 late.append(TodayEntry(user_id=uid, name=name,
                                        checked_in_at=checked_in_str,
@@ -389,7 +400,8 @@ async def stats_schedule(
     _: Annotated[dict, AdminOnly],
     target_date: date | None = None,
 ) -> dict:
-    day = target_date or datetime.now(timezone.utc).date()
+    tz = ZoneInfo(settings.timezone)
+    day = target_date or datetime.now(tz).date()
 
     async with db.acquire() as conn:
         employees = await conn.fetch(
@@ -401,11 +413,10 @@ async def stats_schedule(
         logs = await conn.fetch(
             """SELECT user_id, action, timestamp
                FROM attendance_logs
-               WHERE timestamp >= $1::date
-                 AND timestamp < ($1::date + INTERVAL '1 day')
+               WHERE (timestamp AT TIME ZONE $1)::date = $2
                  AND action IN ('check_in', 'check_out')
                ORDER BY user_id, timestamp ASC""",
-            day,
+            settings.timezone, day,
         )
         rev_row = await conn.fetchrow(
             "SELECT COALESCE(amount, 0) AS total FROM revenue_entries WHERE date = $1",

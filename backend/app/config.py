@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     telegram_chat_id: str = ""
 
     # Shift config
-    shift_start_hour: int = 9
-    late_threshold_minutes: int = 15
+    shift_start_hour: int = 10
+    late_threshold_minutes: int = 0
     timezone: str = "Europe/Moscow"
 
 
