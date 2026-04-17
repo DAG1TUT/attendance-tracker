@@ -18,6 +18,7 @@ function showTab(tab) {
   if (tab === 'employees') loadEmployees();
   if (tab === 'salary') { loadRevenue(); initSalaryDates(); }
   if (tab === 'logs') loadLogs();
+  if (tab === 'schedule') loadSchedule();
   if (tab === 'suspicious') loadSuspicious();
 }
 
@@ -373,6 +374,109 @@ async function loadSuspicious() {
   }
 }
 
+// ── Schedule / Timeline ───────────────────────────────────────────────────────
+async function loadSchedule() {
+  const dateInput = document.getElementById('sched-date');
+  if (!dateInput) return;
+  const date = dateInput.value || new Date().toISOString().split('T')[0];
+  const wrap = document.getElementById('schedule-wrap');
+  if (wrap) wrap.innerHTML = '<div class="empty">Загрузка...</div>';
+  try {
+    const data = await api('GET', `/admin/stats/schedule?target_date=${date}`);
+    renderSchedule(data);
+  } catch (err) {
+    if (wrap) wrap.innerHTML = `<div class="empty">Ошибка: ${err.message}</div>`;
+  }
+}
+
+function renderSchedule(data) {
+  const wrap = document.getElementById('schedule-wrap');
+  if (!wrap) return;
+  const fmtMoney = (n) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+
+  if (!data.employees.length) {
+    wrap.innerHTML = '<div class="empty">Нет сотрудников</div>';
+    return;
+  }
+
+  // ── Determine time window ──
+  let minH = 8, maxH = 20;
+  data.employees.forEach((emp) => {
+    emp.sessions.forEach((s) => {
+      const inH = new Date(s.check_in).getHours() + new Date(s.check_in).getMinutes() / 60;
+      minH = Math.min(minH, Math.floor(inH));
+      const endTime = s.check_out ? new Date(s.check_out) : new Date();
+      const outH = endTime.getHours() + endTime.getMinutes() / 60;
+      maxH = Math.max(maxH, Math.ceil(outH));
+    });
+  });
+  minH = Math.max(0, minH - 1);
+  maxH = Math.min(24, maxH + 1);
+  const span = maxH - minH;
+
+  function toPct(isoStr) {
+    const t = new Date(isoStr);
+    const h = t.getHours() + t.getMinutes() / 60;
+    return Math.max(0, Math.min(100, (h - minH) / span * 100)).toFixed(2);
+  }
+
+  // ── Axis labels ──
+  const ticks = [];
+  for (let h = minH; h <= maxH; h++) {
+    const pct = ((h - minH) / span * 100).toFixed(2);
+    ticks.push(`<div class="tl-tick" style="left:${pct}%">${String(h).padStart(2,'0')}:00</div>`);
+  }
+
+  // ── Rows ──
+  const rows = data.employees.map((emp) => {
+    const bars = emp.sessions.map((s) => {
+      const left = toPct(s.check_in);
+      const rightTs = s.check_out || new Date().toISOString();
+      const right = toPct(rightTs);
+      const w = Math.max(0.4, right - left).toFixed(2);
+      const active = !s.check_out;
+      const inStr = new Date(s.check_in).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+      const outStr = s.check_out
+        ? new Date(s.check_out).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+        : 'сейчас';
+      const label = Number(w) > 7 ? `<span class="tl-bar-lbl">${inStr}–${outStr}</span>` : '';
+      return `<div class="tl-bar ${active ? 'tl-bar-active' : 'tl-bar-done'}"
+        style="left:${left}%;width:${w}%"
+        title="${inStr} — ${outStr} (${s.minutes} мин)">${label}</div>`;
+    }).join('');
+
+    const h = emp.total_hours;
+    const hoursStr = h <= 0 ? '—' : (h >= 1
+      ? `${Math.floor(h)} ч ${Math.round((h % 1) * 60)} м`
+      : `${Math.round(h * 60)} м`);
+
+    return `
+      <div class="tl-row">
+        <div class="tl-name">
+          <span>${emp.name}</span>
+          ${emp.is_active ? '<span class="badge badge-green tl-badge">в работе</span>' : ''}
+        </div>
+        <div class="tl-track">${bars || '<span style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;color:var(--muted)">нет отметок</span>'}</div>
+        <div class="tl-info">
+          <div class="tl-earn">${fmtMoney(emp.total_pay)} ₽</div>
+          <div class="tl-hours">${hoursStr}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const revenueStr = Number(data.revenue) > 0
+    ? `Выручка: <b>${Number(data.revenue).toLocaleString('ru-RU')} ₽</b>`
+    : '<span style="color:var(--muted)">Выручка на этот день не указана</span>';
+
+  wrap.innerHTML = `
+    <div class="tl-summary">${revenueStr}</div>
+    <div class="tl-container">
+      <div class="tl-axis-wrap"><div class="tl-axis">${ticks.join('')}</div></div>
+      <div class="tl-rows">${rows}</div>
+    </div>
+  `;
+}
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 function startPolling() {
   setInterval(() => {
@@ -389,6 +493,10 @@ async function init() {
     if (me.role !== 'admin') { window.location.href = '/app.html'; return; }
     document.getElementById('admin-name').textContent = me.name;
   } catch { window.location.href = '/app.html'; return; }
+  const today = new Date().toISOString().split('T')[0];
+  const schedDate = document.getElementById('sched-date');
+  if (schedDate) schedDate.value = today;
+
   showTab('dashboard');
   startPolling();
 }

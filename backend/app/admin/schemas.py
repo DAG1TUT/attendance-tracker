@@ -98,3 +98,30 @@ class SalaryReport(BaseModel):
     date_to: date
     total_revenue: Decimal
     employees: list[SalaryEntry]
+
+
+# ── Schedule / Timeline ───────────────────────────────────────────────────────
+
+class ScheduleSession(BaseModel):
+    check_in: datetime
+    check_out: datetime | None = None
+    minutes: int
+
+
+class ScheduleEntry(BaseModel):
+    user_id: int
+    name: str
+    hourly_rate: Decimal
+    bonus_percent: Decimal
+    sessions: list[ScheduleSession]
+    total_hours: float
+    base_pay: Decimal
+    bonus_pay: Decimal
+    total_pay: Decimal
+    is_active: bool  # currently checked in (no checkout yet)
+
+
+class DaySchedule(BaseModel):
+    date: date
+    revenue: Decimal
+    employees: list[ScheduleEntry]

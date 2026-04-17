@@ -33,6 +33,9 @@
     <button id="nav-logs"      class="nav-item" onclick="showTab('logs')">
       <span class="nav-icon">📋</span> История
     </button>
+    <button id="nav-schedule"   class="nav-item" onclick="showTab('schedule')">
+      <span class="nav-icon">📅</span> График
+    </button>
     <button id="nav-suspicious" class="nav-item" onclick="showTab('suspicious')">
       <span class="nav-icon">⚠️</span> Подозрительные
     </button>
@@ -188,6 +191,23 @@
           </thead>
           <tbody id="logs-tbody"><tr><td colspan="6" class="empty">Загрузка...</td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Schedule page -->
+    <div id="page-schedule" class="tab-page">
+      <div class="page-title">📅 График смен</div>
+      <div class="filter-bar" style="margin-bottom:16px;">
+        <div class="form-group" style="margin:0;">
+          <label>Дата</label>
+          <input type="date" id="sched-date" onchange="loadSchedule()" />
+        </div>
+        <div style="display:flex;align-items:flex-end;">
+          <button class="btn btn-primary" onclick="loadSchedule()">Показать</button>
+        </div>
+      </div>
+      <div id="schedule-wrap">
+        <div class="empty">Загрузка...</div>
       </div>
     </div>
 

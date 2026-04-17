@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.admin.schemas import (
     AdminLogOut,
+    DaySchedule,
     EmployeeCreate,
     EmployeeOut,
     EmployeeUpdate,
@@ -16,6 +17,8 @@ from app.admin.schemas import (
     RevenueUpsert,
     SalaryEntry,
     SalaryReport,
+    ScheduleEntry,
+    ScheduleSession,
     TodayEntry,
     TodayStats,
 )
@@ -376,3 +379,83 @@ async def calculate_salary(
         date_from=date_from, date_to=date_to,
         total_revenue=total_revenue, employees=result,
     )
+
+
+# ── Daily schedule / Timeline ─────────────────────────────────────────────────
+
+@router.get("/stats/schedule", response_model=DaySchedule)
+async def stats_schedule(
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+    target_date: date | None = None,
+) -> dict:
+    day = target_date or datetime.now(timezone.utc).date()
+
+    async with db.acquire() as conn:
+        employees = await conn.fetch(
+            """SELECT id, name, hourly_rate, bonus_percent
+               FROM users
+               WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
+               ORDER BY name"""
+        )
+        logs = await conn.fetch(
+            """SELECT user_id, action, timestamp
+               FROM attendance_logs
+               WHERE timestamp >= $1::date
+                 AND timestamp < ($1::date + INTERVAL '1 day')
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY user_id, timestamp ASC""",
+            day,
+        )
+        rev_row = await conn.fetchrow(
+            "SELECT COALESCE(amount, 0) AS total FROM revenue_entries WHERE date = $1",
+            day,
+        )
+
+    revenue = Decimal(str(rev_row["total"])) if rev_row else Decimal("0")
+
+    user_logs: dict[int, list] = {}
+    for log in logs:
+        user_logs.setdefault(log["user_id"], []).append(log)
+
+    result = []
+    now_utc = datetime.now(timezone.utc)
+
+    for emp in employees:
+        events = user_logs.get(emp["id"], [])
+        sessions: list[ScheduleSession] = []
+        last_in: datetime | None = None
+        total_seconds = 0.0
+        is_active = False
+
+        for ev in events:
+            ts: datetime = ev["timestamp"]
+            if ev["action"] == "check_in":
+                last_in = ts
+            elif ev["action"] == "check_out" and last_in:
+                minutes = int((ts - last_in).total_seconds() / 60)
+                total_seconds += minutes * 60
+                sessions.append(ScheduleSession(check_in=last_in, check_out=ts, minutes=minutes))
+                last_in = None
+
+        if last_in:
+            minutes = int((now_utc - last_in).total_seconds() / 60)
+            total_seconds += minutes * 60
+            sessions.append(ScheduleSession(check_in=last_in, check_out=None, minutes=minutes))
+            is_active = True
+
+        total_hours = round(total_seconds / 3600, 2)
+        rate = Decimal(str(emp["hourly_rate"]))
+        pct = Decimal(str(emp["bonus_percent"]))
+        base = (Decimal(str(total_hours)) * rate).quantize(Decimal("0.01"))
+        bonus = (revenue * pct / Decimal("100")).quantize(Decimal("0.01"))
+
+        result.append(ScheduleEntry(
+            user_id=emp["id"], name=emp["name"],
+            hourly_rate=rate, bonus_percent=pct,
+            sessions=sessions, total_hours=total_hours,
+            base_pay=base, bonus_pay=bonus, total_pay=(base + bonus),
+            is_active=is_active,
+        ))
+
+    return DaySchedule(date=day, revenue=revenue, employees=result)
