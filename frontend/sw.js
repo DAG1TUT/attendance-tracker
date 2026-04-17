@@ -1,4 +1,4 @@
-const CACHE_NAME = 'attendance-v5';
+const CACHE_NAME = 'attendance-v6';
 const SHELL_ASSETS = [
   '/app.html',
   '/static/app.css',

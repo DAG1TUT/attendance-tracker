@@ -12,8 +12,10 @@ async function api(method, path, body = null) {
 function showTab(tab) {
   document.querySelectorAll('.tab-page').forEach((p) => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
+  document.querySelectorAll('.bn-item').forEach((n) => n.classList.remove('active'));
   document.getElementById(`page-${tab}`)?.classList.add('active');
   document.getElementById(`nav-${tab}`)?.classList.add('active');
+  document.getElementById(`bn-${tab}`)?.classList.add('active');
   if (tab === 'dashboard') loadDashboard();
   if (tab === 'employees') loadEmployees();
   if (tab === 'salary') { loadRevenue(); initSalaryDates(); }
@@ -87,6 +89,8 @@ async function loadPending() {
     section.style.display = 'block';
     badge.style.display = 'inline';
     badge.textContent = pending.length;
+    const bnBadge = document.getElementById('bn-pending-badge');
+    if (bnBadge) { bnBadge.style.display = 'inline'; bnBadge.textContent = pending.length; }
     tbody.innerHTML = pending.map((e) => `
       <tr>
         <td>${e.name}</td>
@@ -546,6 +550,8 @@ async function init() {
     const me = await api('GET', '/auth/me');
     if (me.role !== 'admin') { window.location.href = '/app.html'; return; }
     document.getElementById('admin-name').textContent = me.name;
+    const mob = document.getElementById('mobile-admin-name');
+    if (mob) mob.textContent = me.name;
   } catch { window.location.href = '/app.html'; return; }
   const today = new Date().toISOString().split('T')[0];
   const schedDate = document.getElementById('sched-date');

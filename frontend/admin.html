@@ -13,7 +13,7 @@
 
 <div class="shell">
 
-  <!-- ── Sidebar ── -->
+  <!-- ── Sidebar (desktop) ── -->
   <nav class="sidebar">
     <div class="sidebar-logo">
       <h2>☕ Учёт времени</h2>
@@ -47,6 +47,13 @@
 
   <!-- ── Main ── -->
   <main class="main">
+
+  <!-- ── Mobile top bar ── -->
+  <header class="mobile-topbar">
+    <span>☕ Учёт времени</span>
+    <span id="mobile-admin-name" style="font-size:12px;color:var(--muted)"></span>
+    <button class="btn-icon" onclick="doLogout()" title="Выйти">⎋</button>
+  </header>
 
     <!-- Dashboard page -->
     <div id="page-dashboard" class="tab-page">
@@ -222,6 +229,35 @@
 
   </main>
 </div>
+
+<!-- ── Bottom nav (mobile) ── -->
+<nav class="bottom-nav" id="bottom-nav">
+  <button class="bn-item" id="bn-dashboard" onclick="showTab('dashboard')">
+    <span class="bn-icon">📊</span>
+    <span class="bn-label">Сегодня</span>
+  </button>
+  <button class="bn-item" id="bn-employees" onclick="showTab('employees')">
+    <span class="bn-icon">👥</span>
+    <span class="bn-label">Персонал</span>
+    <span id="bn-pending-badge" class="bn-badge" style="display:none">0</span>
+  </button>
+  <button class="bn-item" id="bn-salary" onclick="showTab('salary')">
+    <span class="bn-icon">💰</span>
+    <span class="bn-label">Зарплата</span>
+  </button>
+  <button class="bn-item" id="bn-schedule" onclick="showTab('schedule')">
+    <span class="bn-icon">📅</span>
+    <span class="bn-label">График</span>
+  </button>
+  <button class="bn-item" id="bn-logs" onclick="showTab('logs')">
+    <span class="bn-icon">📋</span>
+    <span class="bn-label">История</span>
+  </button>
+  <button class="bn-item" id="bn-suspicious" onclick="showTab('suspicious')">
+    <span class="bn-icon">⚠️</span>
+    <span class="bn-label">Алерты</span>
+  </button>
+</nav>
 
 <!-- ── Employee Modal ── -->
 <div id="emp-modal" class="modal-overlay">
