@@ -10,6 +10,12 @@ class LoginRequest(BaseModel):
     user_agent: str
 
 
+class RegisterRequest(BaseModel):
+    name: str
+    phone: str
+    password: str
+
+
 class BootstrapRequest(BaseModel):
     name: str
     phone: str
@@ -22,3 +28,4 @@ class UserOut(BaseModel):
     phone: str
     name: str
     role: str
+    status: str = "active"

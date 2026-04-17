@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Annotated
 
 import asyncpg
@@ -11,6 +12,10 @@ from app.admin.schemas import (
     EmployeeCreate,
     EmployeeOut,
     EmployeeUpdate,
+    RevenueOut,
+    RevenueUpsert,
+    SalaryEntry,
+    SalaryReport,
     TodayEntry,
     TodayStats,
 )
@@ -21,6 +26,56 @@ from app.dependencies import AdminOnly, get_db
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+# ── Pending approvals ─────────────────────────────────────────────────────────
+
+@router.get("/employees/pending", response_model=list[EmployeeOut])
+async def list_pending(
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> list[dict]:
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, phone, name, role, is_active, status,
+                      hourly_rate, bonus_percent, created_at
+               FROM users WHERE status = 'pending' ORDER BY created_at"""
+        )
+    return [dict(r) for r in rows]
+
+
+@router.post("/employees/{employee_id}/approve", response_model=EmployeeOut)
+async def approve_employee(
+    employee_id: int,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            """UPDATE users SET status = 'active'
+               WHERE id = $1 AND status = 'pending'
+               RETURNING id, phone, name, role, is_active, status,
+                         hourly_rate, bonus_percent, created_at""",
+            employee_id,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден или уже подтверждён")
+    return dict(row)
+
+
+@router.post("/employees/{employee_id}/reject")
+async def reject_employee(
+    employee_id: int,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM users WHERE id = $1 AND status = 'pending'", employee_id
+        )
+    if result == "DELETE 0":
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    return {"message": "Заявка отклонена"}
+
+
 # ── Employees ─────────────────────────────────────────────────────────────────
 
 @router.get("/employees", response_model=list[EmployeeOut])
@@ -29,12 +84,15 @@ async def list_employees(
     _: Annotated[dict, AdminOnly],
     is_active: bool | None = None,
 ) -> list[dict]:
-    query = "SELECT id, phone, name, role, is_active, created_at FROM users"
+    conditions = ["status = 'active'"]
     args: list = []
     if is_active is not None:
-        query += " WHERE is_active = $1"
+        conditions.append(f"is_active = ${len(args) + 1}")
         args.append(is_active)
-    query += " ORDER BY name"
+    where = "WHERE " + " AND ".join(conditions)
+    query = f"""SELECT id, phone, name, role, is_active, status,
+                       hourly_rate, bonus_percent, created_at
+                FROM users {where} ORDER BY name"""
     async with db.acquire() as conn:
         rows = await conn.fetch(query, *args)
     return [dict(r) for r in rows]
@@ -52,15 +110,12 @@ async def create_employee(
             raise HTTPException(status_code=409, detail="Телефон уже занят")
 
         row = await conn.fetchrow(
-            """
-            INSERT INTO users (phone, name, password_hash, role)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, phone, name, role, is_active, created_at
-            """,
-            body.phone,
-            body.name,
-            hash_password(body.password),
-            body.role,
+            """INSERT INTO users (phone, name, password_hash, role, hourly_rate, bonus_percent, status)
+               VALUES ($1, $2, $3, $4, $5, $6, 'active')
+               RETURNING id, phone, name, role, is_active, status,
+                         hourly_rate, bonus_percent, created_at""",
+            body.phone, body.name, hash_password(body.password),
+            body.role, body.hourly_rate, body.bonus_percent,
         )
     return dict(row)
 
@@ -77,41 +132,26 @@ async def update_employee(
         if not user:
             raise HTTPException(status_code=404, detail="Сотрудник не найден")
 
-        updates = []
-        args: list = []
+        updates, args = [], []
         idx = 1
-
-        if body.name is not None:
-            updates.append(f"name = ${idx}")
-            args.append(body.name)
-            idx += 1
-        if body.phone is not None:
-            updates.append(f"phone = ${idx}")
-            args.append(body.phone)
-            idx += 1
+        for field, value in {
+            "name": body.name, "phone": body.phone, "role": body.role,
+            "is_active": body.is_active, "hourly_rate": body.hourly_rate,
+            "bonus_percent": body.bonus_percent,
+        }.items():
+            if value is not None:
+                updates.append(f"{field} = ${idx}"); args.append(value); idx += 1
         if body.password is not None:
-            updates.append(f"password_hash = ${idx}")
-            args.append(hash_password(body.password))
-            idx += 1
-        if body.role is not None:
-            updates.append(f"role = ${idx}")
-            args.append(body.role)
-            idx += 1
-        if body.is_active is not None:
-            updates.append(f"is_active = ${idx}")
-            args.append(body.is_active)
-            idx += 1
+            updates.append(f"password_hash = ${idx}"); args.append(hash_password(body.password)); idx += 1
 
         if not updates:
             raise HTTPException(status_code=400, detail="Нет данных для обновления")
 
         args.append(employee_id)
         row = await conn.fetchrow(
-            f"""
-            UPDATE users SET {', '.join(updates)}
-            WHERE id = ${idx}
-            RETURNING id, phone, name, role, is_active, created_at
-            """,
+            f"""UPDATE users SET {', '.join(updates)} WHERE id = ${idx}
+                RETURNING id, phone, name, role, is_active, status,
+                          hourly_rate, bonus_percent, created_at""",
             *args,
         )
     return dict(row)
@@ -143,38 +183,25 @@ async def list_logs(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict]:
-    conditions = []
-    args: list = []
+    conditions, args = [], []
     idx = 1
-
     if user_id is not None:
-        conditions.append(f"al.user_id = ${idx}")
-        args.append(user_id)
-        idx += 1
+        conditions.append(f"al.user_id = ${idx}"); args.append(user_id); idx += 1
     if suspicious_only:
         conditions.append("al.is_suspicious = TRUE")
     if date_from:
-        conditions.append(f"al.timestamp >= ${idx}::timestamptz")
-        args.append(date_from)
-        idx += 1
+        conditions.append(f"al.timestamp >= ${idx}::timestamptz"); args.append(date_from); idx += 1
     if date_to:
-        conditions.append(f"al.timestamp <= ${idx}::timestamptz")
-        args.append(date_to)
-        idx += 1
+        conditions.append(f"al.timestamp <= ${idx}::timestamptz"); args.append(date_to); idx += 1
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     args.extend([limit, offset])
-
     query = f"""
         SELECT al.id, al.user_id, u.name AS employee_name,
                al.action, al.timestamp, al.ip_address,
-               al.device_id, al.user_agent,
-               al.is_suspicious, al.suspicious_reason
-        FROM attendance_logs al
-        JOIN users u ON u.id = al.user_id
-        {where}
-        ORDER BY al.timestamp DESC
-        LIMIT ${idx} OFFSET ${idx + 1}
+               al.device_id, al.user_agent, al.is_suspicious, al.suspicious_reason
+        FROM attendance_logs al JOIN users u ON u.id = al.user_id
+        {where} ORDER BY al.timestamp DESC LIMIT ${idx} OFFSET ${idx + 1}
     """
     async with db.acquire() as conn:
         rows = await conn.fetch(query, *args)
@@ -189,17 +216,11 @@ async def list_suspicious_logs(
 ) -> list[dict]:
     async with db.acquire() as conn:
         rows = await conn.fetch(
-            """
-            SELECT al.id, al.user_id, u.name AS employee_name,
-                   al.action, al.timestamp, al.ip_address,
-                   al.device_id, al.user_agent,
-                   al.is_suspicious, al.suspicious_reason
-            FROM attendance_logs al
-            JOIN users u ON u.id = al.user_id
-            WHERE al.is_suspicious = TRUE
-            ORDER BY al.timestamp DESC
-            LIMIT $1
-            """,
+            """SELECT al.id, al.user_id, u.name AS employee_name,
+                      al.action, al.timestamp, al.ip_address,
+                      al.device_id, al.user_agent, al.is_suspicious, al.suspicious_reason
+               FROM attendance_logs al JOIN users u ON u.id = al.user_id
+               WHERE al.is_suspicious = TRUE ORDER BY al.timestamp DESC LIMIT $1""",
             limit,
         )
     return [dict(r) for r in rows]
@@ -212,53 +233,146 @@ async def stats_today(
     db: Annotated[asyncpg.Pool, Depends(get_db)],
     _: Annotated[dict, AdminOnly],
 ) -> dict:
-    now = datetime.now(timezone.utc)
     shift_total_minutes = settings.shift_start_hour * 60 + settings.late_threshold_minutes
-
     async with db.acquire() as conn:
-        # All active employees
         all_employees = await conn.fetch(
-            "SELECT id, name FROM users WHERE is_active = TRUE AND role = 'employee' ORDER BY name"
+            """SELECT id, name FROM users
+               WHERE is_active = TRUE AND role = 'employee' AND status = 'active'
+               ORDER BY name"""
         )
-
-        # Today's first check-in per employee
         today_checkins = await conn.fetch(
-            """
-            SELECT DISTINCT ON (user_id)
-                user_id, timestamp
-            FROM attendance_logs
-            WHERE action = 'check_in'
-              AND timestamp >= NOW()::date
-            ORDER BY user_id, timestamp ASC
-            """
+            """SELECT DISTINCT ON (user_id) user_id, timestamp
+               FROM attendance_logs
+               WHERE action = 'check_in' AND timestamp >= NOW()::date
+               ORDER BY user_id, timestamp ASC"""
         )
 
     checkin_map = {r["user_id"]: r["timestamp"] for r in today_checkins}
-
-    present = []
-    absent = []
-    late = []
-
+    present, absent, late = [], [], []
     for emp in all_employees:
-        uid = emp["id"]
-        name = emp["name"]
-
+        uid, name = emp["id"], emp["name"]
         if uid not in checkin_map:
             absent.append(TodayEntry(user_id=uid, name=name))
         else:
             ts: datetime = checkin_map[uid]
             checked_in_str = ts.strftime("%H:%M")
             entry_minutes = ts.hour * 60 + ts.minute
-
             if entry_minutes > shift_total_minutes:
-                late_min = entry_minutes - shift_total_minutes
-                late.append(TodayEntry(
-                    user_id=uid,
-                    name=name,
-                    checked_in_at=checked_in_str,
-                    late_minutes=late_min,
-                ))
+                late.append(TodayEntry(user_id=uid, name=name,
+                                       checked_in_at=checked_in_str,
+                                       late_minutes=entry_minutes - shift_total_minutes))
             else:
                 present.append(TodayEntry(user_id=uid, name=name, checked_in_at=checked_in_str))
 
     return {"present": present, "absent": absent, "late": late}
+
+
+# ── Revenue ───────────────────────────────────────────────────────────────────
+
+@router.post("/revenue", response_model=RevenueOut)
+async def upsert_revenue(
+    body: RevenueUpsert,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    current_user: Annotated[dict, AdminOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO revenue_entries (date, amount, note, created_by)
+               VALUES ($1, $2, $3, $4)
+               ON CONFLICT (date) DO UPDATE
+               SET amount = EXCLUDED.amount, note = EXCLUDED.note
+               RETURNING id, date, amount, note, created_at""",
+            body.date, body.amount, body.note, current_user["id"],
+        )
+    return dict(row)
+
+
+@router.get("/revenue", response_model=list[RevenueOut])
+async def list_revenue(
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[dict]:
+    conditions, args = [], []
+    idx = 1
+    if date_from:
+        conditions.append(f"date >= ${idx}"); args.append(date_from); idx += 1
+    if date_to:
+        conditions.append(f"date <= ${idx}"); args.append(date_to); idx += 1
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT id, date, amount, note, created_at FROM revenue_entries {where} ORDER BY date DESC",
+            *args,
+        )
+    return [dict(r) for r in rows]
+
+
+# ── Salary calculation ────────────────────────────────────────────────────────
+
+@router.get("/salary", response_model=SalaryReport)
+async def calculate_salary(
+    date_from: date,
+    date_to: date,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        employees = await conn.fetch(
+            """SELECT id, name, role, hourly_rate, bonus_percent
+               FROM users
+               WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
+               ORDER BY name"""
+        )
+        logs = await conn.fetch(
+            """SELECT user_id, action, timestamp
+               FROM attendance_logs
+               WHERE timestamp >= $1::date
+                 AND timestamp < ($2::date + INTERVAL '1 day')
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY user_id, timestamp ASC""",
+            date_from, date_to,
+        )
+        rev_row = await conn.fetchrow(
+            """SELECT COALESCE(SUM(amount), 0) AS total
+               FROM revenue_entries WHERE date >= $1 AND date <= $2""",
+            date_from, date_to,
+        )
+
+    total_revenue = Decimal(str(rev_row["total"]))
+
+    # Group logs by user
+    user_logs: dict[int, list] = {}
+    for log in logs:
+        user_logs.setdefault(log["user_id"], []).append(log)
+
+    def calc_hours(events: list) -> float:
+        total_sec = 0.0
+        last_in = None
+        for ev in sorted(events, key=lambda e: e["timestamp"]):
+            if ev["action"] == "check_in":
+                last_in = ev["timestamp"]
+            elif ev["action"] == "check_out" and last_in:
+                total_sec += (ev["timestamp"] - last_in).total_seconds()
+                last_in = None
+        return round(total_sec / 3600, 2)
+
+    result = []
+    for emp in employees:
+        hours = calc_hours(user_logs.get(emp["id"], []))
+        rate = Decimal(str(emp["hourly_rate"]))
+        pct = Decimal(str(emp["bonus_percent"]))
+        base = (Decimal(str(hours)) * rate).quantize(Decimal("0.01"))
+        bonus = (total_revenue * pct / Decimal("100")).quantize(Decimal("0.01"))
+        result.append(SalaryEntry(
+            user_id=emp["id"], name=emp["name"], role=emp["role"],
+            hourly_rate=rate, bonus_percent=pct,
+            hours_worked=hours, base_pay=base, bonus_pay=bonus,
+            total_pay=(base + bonus),
+        ))
+
+    return SalaryReport(
+        date_from=date_from, date_to=date_to,
+        total_revenue=total_revenue, employees=result,
+    )

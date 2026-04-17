@@ -222,3 +222,23 @@ html, body {
   vertical-align: middle;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Auth tabs ── */
+.auth-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+.auth-tab {
+  flex: 1; padding: 10px; background: none; border: none;
+  color: var(--muted); font-size: 14px; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .2s;
+}
+.auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.auth-tab:hover { color: var(--text); }
+
+/* ── Pending screen ── */
+.btn-secondary {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); padding: 12px 24px;
+  border-radius: var(--radius); font-size: 15px; cursor: pointer;
+}

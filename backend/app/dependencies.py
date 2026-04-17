@@ -40,12 +40,14 @@ async def get_current_user(
 
     async with db.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, phone, name, role, is_active FROM users WHERE id = $1",
+            "SELECT id, phone, name, role, is_active, status FROM users WHERE id = $1",
             int(user_id),
         )
 
     if user is None or not user["is_active"]:
         raise credentials_exc
+    if user["status"] == "pending":
+        raise HTTPException(status_code=403, detail="Аккаунт ожидает подтверждения администратора")
 
     return dict(user)
 

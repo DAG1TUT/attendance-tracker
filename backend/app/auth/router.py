@@ -5,7 +5,7 @@ from typing import Annotated
 import asyncpg
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
-from app.auth.schemas import BootstrapRequest, LoginRequest, UserOut
+from app.auth.schemas import BootstrapRequest, LoginRequest, RegisterRequest, UserOut
 from app.auth.service import (
     create_access_token,
     create_refresh_token,
@@ -60,6 +60,30 @@ async def bootstrap(
     return {"message": "Аккаунт администратора создан"}
 
 
+@router.post("/register", status_code=status.HTTP_201_CREATED)
+async def register(
+    body: RegisterRequest,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+) -> dict:
+    """Employee self-registration. Creates account with pending status."""
+    async with db.acquire() as conn:
+        existing = await conn.fetchval("SELECT id FROM users WHERE phone = $1", body.phone.strip())
+        if existing:
+            raise HTTPException(status_code=409, detail="Телефон уже зарегистрирован")
+
+        await conn.execute(
+            """
+            INSERT INTO users (phone, name, password_hash, role, status)
+            VALUES ($1, $2, $3, 'employee', 'pending')
+            """,
+            body.phone.strip(),
+            body.name.strip(),
+            hash_password(body.password),
+        )
+
+    return {"message": "Заявка отправлена. Ожидайте подтверждения администратора."}
+
+
 @router.post("/login")
 async def login(
     body: LoginRequest,
@@ -68,7 +92,7 @@ async def login(
 ) -> dict:
     async with db.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, name, password_hash, role, is_active FROM users WHERE phone = $1",
+            "SELECT id, name, password_hash, role, is_active, status FROM users WHERE phone = $1",
             body.phone.strip(),
         )
 
@@ -77,6 +101,9 @@ async def login(
 
     if not user["is_active"]:
         raise HTTPException(status_code=403, detail="Аккаунт деактивирован")
+
+    if user["status"] == "pending":
+        raise HTTPException(status_code=403, detail="Аккаунт ожидает подтверждения администратора")
 
     access_token = create_access_token(user["id"])
     refresh_token = create_refresh_token(user["id"])

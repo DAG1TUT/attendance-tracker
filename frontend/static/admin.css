@@ -303,3 +303,34 @@ tbody tr.suspicious:hover { background: rgba(239,68,68,.1); }
 
 /* ── Empty state ── */
 .empty { color: var(--muted); font-size: 13px; padding: 20px 0; text-align: center; }
+
+/* ── Pending badge ── */
+.pending-badge {
+  background: var(--yellow); color: #000;
+  border-radius: 10px; font-size: 11px; font-weight: 700;
+  padding: 1px 6px; margin-left: auto;
+}
+
+/* ── Salary page ── */
+.salary-block { background: var(--surface); border-radius: var(--radius); padding: 20px; }
+.salary-block-title { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+.salary-summary {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--surface2);
+  border-radius: 8px; margin-bottom: 12px; font-size: 14px;
+}
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+
+/* ── Auth tabs in app ── */
+.auth-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  margin-bottom: 20px; gap: 0;
+}
+.auth-tab {
+  flex: 1; padding: 10px; background: none; border: none;
+  color: var(--muted); font-size: 14px; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .2s;
+}
+.auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.auth-tab:hover { color: var(--text); }

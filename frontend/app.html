@@ -19,35 +19,62 @@
       <div class="logo">
         <div class="logo-icon">☕</div>
         <h1>Учёт рабочего времени</h1>
-        <p>Войдите, чтобы отметить приход</p>
+        <p id="auth-subtitle">Войдите, чтобы отметить приход</p>
       </div>
 
       <div id="alert" class="alert"></div>
 
+      <!-- Tabs -->
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Войти</button>
+        <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Регистрация</button>
+      </div>
+
+      <!-- Login form -->
       <form id="login-form">
         <div class="form-group">
           <label for="phone">Номер телефона</label>
-          <input
-            id="phone"
-            type="tel"
-            placeholder="+7 900 000 00 00"
-            autocomplete="username"
-            inputmode="tel"
-            required
-          />
+          <input id="phone" type="tel" placeholder="+7 900 000 00 00"
+            autocomplete="username" inputmode="tel" required />
         </div>
         <div class="form-group">
           <label for="password">Пароль</label>
-          <input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            autocomplete="current-password"
-            required
-          />
+          <input id="password" type="password" placeholder="••••••••"
+            autocomplete="current-password" required />
         </div>
         <button id="btn-login" type="submit" class="btn btn-primary">Войти</button>
       </form>
+
+      <!-- Register form -->
+      <form id="register-form" style="display:none;">
+        <div class="form-group">
+          <label for="reg-name">Имя и фамилия</label>
+          <input id="reg-name" type="text" placeholder="Иван Иванов" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-phone">Номер телефона</label>
+          <input id="reg-phone" type="tel" placeholder="+7 900 000 00 00"
+            inputmode="tel" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Пароль</label>
+          <input id="reg-password" type="password" placeholder="Минимум 6 символов" required />
+        </div>
+        <button id="btn-register" type="submit" class="btn btn-primary">Отправить заявку</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── PENDING SCREEN ── -->
+  <div id="pending-screen" class="screen">
+    <div class="card" style="text-align:center;">
+      <div class="logo-icon" style="font-size:48px;margin-bottom:16px;">⏳</div>
+      <h2 style="margin-bottom:12px;">Заявка отправлена</h2>
+      <p style="color:var(--muted);margin-bottom:24px;">
+        Ваш аккаунт ожидает подтверждения администратора.<br/>
+        Вы получите доступ после одобрения.
+      </p>
+      <button class="btn btn-secondary" onclick="doLogout()">Выйти</button>
     </div>
   </div>
 
