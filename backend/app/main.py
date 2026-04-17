@@ -45,6 +45,9 @@ async def ip_guard(request: Request, call_next):
     # Railway healthcheck comes from internal IP — exempt it
     if request.url.path == "/api/v1/health":
         return await call_next(request)
+    # Only attendance endpoints require cafe WiFi; admin/auth accessible from anywhere
+    if not request.url.path.startswith("/api/v1/attendance/"):
+        return await call_next(request)
     # Fastly CDN always sets X-Forwarded-For to the real client IP
     # request.client.host is Railway's internal proxy — not useful
     xff = request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP")
