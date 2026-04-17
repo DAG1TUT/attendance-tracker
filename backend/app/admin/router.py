@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from decimal import Decimal
 from typing import Annotated
 from zoneinfo import ZoneInfo
@@ -10,6 +10,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.admin.schemas import (
     AdminLogOut,
+    AttendanceDayEdit,
+    DayCell,
     DaySchedule,
     EmployeeCreate,
     EmployeeOut,
@@ -22,6 +24,8 @@ from app.admin.schemas import (
     ScheduleSession,
     TodayEntry,
     TodayStats,
+    WeekSchedule,
+    WeekScheduleEntry,
 )
 from app.auth.service import hash_password
 from app.config import settings
@@ -470,3 +474,116 @@ async def stats_schedule(
         ))
 
     return DaySchedule(date=day, revenue=revenue, employees=result)
+
+
+# ── Weekly schedule table ─────────────────────────────────────────────────────
+
+@router.get("/stats/week", response_model=WeekSchedule)
+async def stats_week(
+    date_from: date,
+    date_to: date,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> dict:
+    tz = ZoneInfo(settings.timezone)
+    dates = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+
+    async with db.acquire() as conn:
+        employees = await conn.fetch(
+            """SELECT id, name FROM users
+               WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
+               ORDER BY name"""
+        )
+        logs = await conn.fetch(
+            """SELECT user_id, action, timestamp
+               FROM attendance_logs
+               WHERE (timestamp AT TIME ZONE $1)::date >= $2
+                 AND (timestamp AT TIME ZONE $1)::date <= $3
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY user_id, timestamp ASC""",
+            settings.timezone, date_from, date_to,
+        )
+
+    # Group logs by user_id → date (Moscow) → list
+    from collections import defaultdict
+    user_day: dict[int, dict[date, list]] = defaultdict(lambda: defaultdict(list))
+    for log in logs:
+        ts_moscow = log["timestamp"].astimezone(tz)
+        user_day[log["user_id"]][ts_moscow.date()].append(
+            {"action": log["action"], "timestamp": log["timestamp"]}
+        )
+
+    result = []
+    for emp in employees:
+        days = []
+        for d in dates:
+            day_logs = sorted(user_day[emp["id"]].get(d, []), key=lambda x: x["timestamp"])
+            check_in_ts = None
+            check_out_ts = None
+            total_sec = 0.0
+            last_in = None
+            for ev in day_logs:
+                if ev["action"] == "check_in":
+                    if check_in_ts is None:
+                        check_in_ts = ev["timestamp"]
+                    last_in = ev["timestamp"]
+                elif ev["action"] == "check_out" and last_in:
+                    check_out_ts = ev["timestamp"]
+                    total_sec += (ev["timestamp"] - last_in).total_seconds()
+                    last_in = None
+            days.append(DayCell(
+                date=d,
+                check_in=check_in_ts,
+                check_out=check_out_ts,
+                hours=round(total_sec / 3600, 1),
+            ))
+        result.append(WeekScheduleEntry(user_id=emp["id"], name=emp["name"], days=days))
+
+    return WeekSchedule(date_from=date_from, date_to=date_to, dates=dates, employees=result)
+
+
+# ── Edit attendance day (admin manual edit) ───────────────────────────────────
+
+@router.put("/attendance/day")
+async def edit_attendance_day(
+    body: AttendanceDayEdit,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> dict:
+    tz = ZoneInfo(settings.timezone)
+
+    async with db.acquire() as conn:
+        # Verify employee exists
+        emp = await conn.fetchrow("SELECT id FROM users WHERE id = $1", body.user_id)
+        if not emp:
+            raise HTTPException(status_code=404, detail="Сотрудник не найден")
+
+        # Delete existing logs for this user on this date (Moscow)
+        await conn.execute(
+            """DELETE FROM attendance_logs
+               WHERE user_id = $1
+                 AND (timestamp AT TIME ZONE $2)::date = $3""",
+            body.user_id, settings.timezone, body.date,
+        )
+
+        if body.check_in:
+            naive = datetime.combine(body.date, dt_time.fromisoformat(body.check_in))
+            ts = naive.replace(tzinfo=tz)
+            await conn.execute(
+                """INSERT INTO attendance_logs
+                   (user_id, action, timestamp, ip_address, device_id, user_agent)
+                   VALUES ($1, 'check_in', $2, 'manual', 'admin-edit', 'admin-edit')""",
+                body.user_id, ts,
+            )
+
+        if body.check_out:
+            naive = datetime.combine(body.date, dt_time.fromisoformat(body.check_out))
+            ts = naive.replace(tzinfo=tz)
+            await conn.execute(
+                """INSERT INTO attendance_logs
+                   (user_id, action, timestamp, ip_address, device_id, user_agent)
+                   VALUES ($1, 'check_out', $2, 'manual', 'admin-edit', 'admin-edit')""",
+                body.user_id, ts,
+            )
+
+    return {"message": "Обновлено"}

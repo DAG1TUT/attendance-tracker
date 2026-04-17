@@ -197,16 +197,12 @@
     <!-- Schedule page -->
     <div id="page-schedule" class="tab-page">
       <div class="page-title">📅 График смен</div>
-      <div class="filter-bar" style="margin-bottom:16px;">
-        <div class="form-group" style="margin:0;">
-          <label>Дата</label>
-          <input type="date" id="sched-date" onchange="loadSchedule()" />
-        </div>
-        <div style="display:flex;align-items:flex-end;">
-          <button class="btn btn-primary" onclick="loadSchedule()">Показать</button>
-        </div>
+      <div class="week-nav">
+        <button class="btn btn-ghost" onclick="shiftWeek(-7)">← Пред. неделя</button>
+        <span id="week-label" style="font-size:14px;font-weight:600;color:var(--text)"></span>
+        <button class="btn btn-ghost" onclick="shiftWeek(7)">След. неделя →</button>
       </div>
-      <div id="schedule-wrap">
+      <div id="schedule-wrap" style="overflow-x:auto;">
         <div class="empty">Загрузка...</div>
       </div>
     </div>
@@ -270,6 +266,35 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeEmpModal()">Отмена</button>
       <button class="btn btn-primary" onclick="saveEmployee()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Attendance Edit Modal ── -->
+<div id="att-modal" class="modal-overlay">
+  <div class="modal">
+    <h3 id="att-modal-title">Редактировать смену</h3>
+    <div id="alert-att" class="alert"></div>
+    <input type="hidden" id="att-user-id" />
+    <input type="hidden" id="att-date" />
+    <div class="form-row">
+      <div class="form-group" style="flex:1">
+        <label>Приход (ЧЧ:ММ)</label>
+        <input id="att-checkin" type="time" />
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Уход (ЧЧ:ММ)</label>
+        <input id="att-checkout" type="time" />
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:16px;">
+      Время московское. Сохранение заменит все отметки за этот день.
+    </p>
+    <div class="modal-actions">
+      <button class="btn btn-danger btn-sm" onclick="clearAttDay()">🗑 Очистить день</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closeAttModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveAttDay()">Сохранить</button>
     </div>
   </div>
 </div>

@@ -333,75 +333,44 @@ tfoot .salary-total-row td {
   color: var(--accent);
 }
 
-/* ── Schedule / Timeline ── */
-.tl-summary {
-  display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
-  padding: 12px 18px; background: var(--surface2);
-  border-radius: 8px; margin-bottom: 12px; font-size: 14px;
+/* ── Weekly schedule table ── */
+.week-nav {
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 16px; flex-wrap: wrap;
 }
-.tl-container {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); overflow: hidden;
+.week-table-wrap { overflow-x: auto; }
+.week-table {
+  width: 100%; border-collapse: collapse; min-width: 700px;
 }
-.tl-axis-wrap {
-  padding: 0 16px;
+.week-table thead th {
+  padding: 10px 12px; font-size: 12px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  white-space: nowrap; text-align: center;
+}
+.week-table thead th:first-child { text-align: left; min-width: 130px; }
+.week-table th.week-today { color: var(--accent); }
+.week-name {
+  padding: 10px 16px; font-size: 13px; font-weight: 600;
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
-.tl-axis {
-  position: relative; height: 28px;
-  margin-left: 160px; margin-right: 120px;
-}
-.tl-tick {
-  position: absolute; transform: translateX(-50%);
-  font-size: 10px; color: var(--muted); top: 10px;
-  pointer-events: none;
-}
-.tl-tick::before {
-  content: ''; position: absolute; top: -10px; left: 50%;
-  width: 1px; height: 6px; background: var(--border);
-}
-.tl-rows { }
-.tl-row {
-  display: flex; align-items: center;
-  padding: 10px 16px; gap: 12px;
+.week-cell {
+  padding: 8px 10px; text-align: center;
   border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  cursor: pointer; transition: background .15s;
+  min-width: 90px;
 }
-.tl-row:last-child { border-bottom: none; }
-.tl-name {
-  width: 148px; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 4px;
-  font-size: 13px; font-weight: 500;
-}
-.tl-badge { font-size: 10px !important; padding: 2px 7px !important; }
-.tl-track {
-  flex: 1; height: 34px;
-  background: var(--surface2); border-radius: 6px;
-  position: relative; overflow: hidden; min-width: 80px;
-}
-.tl-bar {
-  position: absolute; top: 4px; height: calc(100% - 8px);
-  border-radius: 4px; display: flex; align-items: center;
-  overflow: hidden; cursor: default; transition: opacity .15s;
-}
-.tl-bar:hover { opacity: .8; }
-.tl-bar-done   { background: var(--accent); }
-.tl-bar-active { background: var(--green); }
-.tl-bar-lbl {
-  font-size: 10px; color: rgba(255,255,255,.9);
-  white-space: nowrap; padding: 0 6px; font-weight: 500;
-}
-.tl-info {
-  width: 108px; flex-shrink: 0; text-align: right;
-}
-.tl-earn  { font-size: 14px; font-weight: 600; }
-.tl-hours { font-size: 11px; color: var(--muted); margin-top: 3px; }
-
-@media (max-width: 700px) {
-  .tl-name  { width: 80px; font-size: 11px; }
-  .tl-info  { width: 80px; }
-  .tl-earn  { font-size: 12px; }
-  .tl-axis  { margin-left: 80px; margin-right: 90px; }
-}
+.week-cell:hover { background: var(--surface2); }
+.week-cell-filled { }
+.week-cell-empty  { }
+.wc-in   { font-size: 12px; color: var(--green);  font-weight: 600; line-height: 1.6; }
+.wc-out  { font-size: 12px; color: var(--red);    font-weight: 600; line-height: 1.6; }
+.wc-h    { font-size: 11px; color: var(--muted);  margin-top: 2px; }
+.wc-dash { font-size: 18px; color: var(--border); line-height: 2.4; }
+.week-table tbody tr:last-child td { border-bottom: none; }
+.week-table tbody tr:hover .week-name { background: var(--surface2); }
 
 /* ── Auth tabs in app ── */
 .auth-tabs {

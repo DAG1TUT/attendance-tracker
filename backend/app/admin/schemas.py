@@ -125,3 +125,32 @@ class DaySchedule(BaseModel):
     date: date
     revenue: Decimal
     employees: list[ScheduleEntry]
+
+
+# ── Weekly table ──────────────────────────────────────────────────────────────
+
+class DayCell(BaseModel):
+    date: date
+    check_in: datetime | None = None
+    check_out: datetime | None = None
+    hours: float = 0.0
+
+
+class WeekScheduleEntry(BaseModel):
+    user_id: int
+    name: str
+    days: list[DayCell]
+
+
+class WeekSchedule(BaseModel):
+    date_from: date
+    date_to: date
+    dates: list[date]
+    employees: list[WeekScheduleEntry]
+
+
+class AttendanceDayEdit(BaseModel):
+    user_id: int
+    date: date
+    check_in: str | None = None   # "HH:MM" Moscow time, None = clear
+    check_out: str | None = None  # "HH:MM" Moscow time
