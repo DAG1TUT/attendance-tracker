@@ -273,6 +273,10 @@ async function calcSalary() {
     const fmtDate = (d) => new Date(d + 'T00:00:00').toLocaleDateString('ru-RU');
     const fmt = (n) => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 });
 
+    const totalAll = rep.employees.reduce((sum, e) => sum + Number(e.total_pay), 0);
+    const totalBase = rep.employees.reduce((sum, e) => sum + Number(e.base_pay), 0);
+    const totalBonus = rep.employees.reduce((sum, e) => sum + Number(e.bonus_pay), 0);
+
     result.innerHTML = `
       <div class="salary-summary">
         <span>Период: <b>${fmtDate(rep.date_from)} — ${fmtDate(rep.date_to)}</b></span>
@@ -301,6 +305,17 @@ async function calcSalary() {
               </tr>
             `).join('') : '<tr><td colspan="7" class="empty">Нет сотрудников</td></tr>'}
           </tbody>
+          ${rep.employees.length ? `
+          <tfoot>
+            <tr class="salary-total-row">
+              <td><b>ИТОГО</b></td>
+              <td>—</td><td>—</td>
+              <td><b>${fmt(totalBase)} ₽</b></td>
+              <td>—</td>
+              <td><b>${fmt(totalBonus)} ₽</b></td>
+              <td><b class="salary-grand-total">${fmt(totalAll)} ₽</b></td>
+            </tr>
+          </tfoot>` : ''}
         </table>
       </div>
     `;

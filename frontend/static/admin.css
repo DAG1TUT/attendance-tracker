@@ -322,6 +322,17 @@ tbody tr.suspicious:hover { background: rgba(239,68,68,.1); }
 .form-row { display: flex; gap: 12px; }
 .form-row .form-group { flex: 1; }
 
+tfoot .salary-total-row td {
+  padding: 13px 16px;
+  border-top: 2px solid var(--border);
+  background: var(--surface2);
+  font-size: 13px;
+}
+.salary-grand-total {
+  font-size: 15px;
+  color: var(--accent);
+}
+
 /* ── Schedule / Timeline ── */
 .tl-summary {
   display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
