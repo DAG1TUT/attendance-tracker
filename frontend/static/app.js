@@ -28,6 +28,90 @@ async function api(method, path, body = null) {
   return data;
 }
 
+// ── Employee tabs ─────────────────────────────────────────────────────────────
+function switchEmpTab(tab) {
+  document.querySelectorAll('.emp-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.emp-page').forEach(p => p.classList.remove('active'));
+  document.getElementById(`etab-${tab}`)?.classList.add('active');
+  document.getElementById(`emp-page-${tab}`)?.classList.add('active');
+  if (tab === 'schedule') loadMySchedule();
+}
+
+// ── Employee weekly schedule ──────────────────────────────────────────────────
+let _empWeekStart = null;
+
+function empGetMonday(d = new Date()) {
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(d); mon.setDate(d.getDate() + diff);
+  return mon.toISOString().split('T')[0];
+}
+
+function empAddDays(iso, n) {
+  const d = new Date(iso); d.setDate(d.getDate() + n);
+  return d.toISOString().split('T')[0];
+}
+
+function empShiftWeek(delta) {
+  _empWeekStart = empAddDays(_empWeekStart, delta);
+  loadMySchedule();
+}
+
+async function loadMySchedule() {
+  if (!_empWeekStart) _empWeekStart = empGetMonday();
+  const dateFrom = _empWeekStart;
+  const dateTo   = empAddDays(_empWeekStart, 6);
+
+  const d1 = new Date(dateFrom), d2 = new Date(dateTo);
+  const fmtShort = (d) => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  const lbl = document.getElementById('emp-week-label');
+  if (lbl) lbl.textContent = `${fmtShort(d1)} — ${fmtShort(d2)}`;
+
+  const wrap = document.getElementById('emp-sched-wrap');
+  if (wrap) wrap.innerHTML = '<div style="text-align:center;color:var(--muted);padding:24px 0;">Загрузка...</div>';
+
+  try {
+    const data = await api('GET', `/attendance/week?date_from=${dateFrom}&date_to=${dateTo}`);
+    renderMySchedule(data);
+  } catch (err) {
+    if (wrap) wrap.innerHTML = `<div style="text-align:center;color:var(--muted);padding:24px 0;">Ошибка: ${err.message}</div>`;
+  }
+}
+
+function renderMySchedule(data) {
+  const wrap = document.getElementById('emp-sched-wrap');
+  const totalEl = document.getElementById('emp-week-total');
+  if (!wrap) return;
+
+  const DAY_SHORT = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const today = new Date().toISOString().split('T')[0];
+
+  const cells = data.days.map((day) => {
+    const isToday = day.date === today;
+    const hasData = day.check_in || day.check_out;
+    const d = new Date(day.date + 'T00:00:00');
+    const dayLabel = `${DAY_SHORT[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}`;
+
+    return `
+      <div class="my-day ${isToday ? 'my-day-today' : ''} ${hasData ? 'my-day-filled' : ''}">
+        <div class="my-day-label">${dayLabel}</div>
+        ${hasData ? `
+          <div class="my-day-in">↑ ${day.check_in ? fmtTime(day.check_in) : '—'}</div>
+          <div class="my-day-out">↓ ${day.check_out ? fmtTime(day.check_out) : '<span style="color:var(--accent);font-size:11px">сейчас</span>'}</div>
+          ${day.hours > 0 ? `<div class="my-day-h">${day.hours} ч</div>` : ''}
+        ` : `<div class="my-day-dash">—</div>`}
+      </div>
+    `;
+  }).join('');
+
+  wrap.innerHTML = `<div class="my-week-grid">${cells}</div>`;
+  if (totalEl) {
+    totalEl.innerHTML = data.total_hours > 0
+      ? `Итого за неделю: <b>${data.total_hours} ч</b>` : '';
+  }
+}
+
 // ── Auth tabs ─────────────────────────────────────────────────────────────────
 function switchAuthTab(tab) {
   const isLogin = tab === 'login';

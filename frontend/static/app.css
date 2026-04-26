@@ -236,6 +236,90 @@ html, body {
 .auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 .auth-tab:hover { color: var(--text); }
 
+/* ── Employee tabs ── */
+.emp-screen {
+  min-height: 100dvh;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  background: var(--bg);
+}
+.emp-screen.active { display: flex; }
+
+.emp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+
+.emp-tabs {
+  display: flex;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 61px; z-index: 9;
+}
+.emp-tab {
+  flex: 1; padding: 12px 8px;
+  background: none; border: none;
+  color: var(--muted); font-size: 14px; font-weight: 500;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all .2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.emp-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.emp-tab:hover  { color: var(--text); }
+
+.emp-page { display: none; flex: 1; overflow-y: auto; padding: 16px 16px 32px; }
+.emp-page.active { display: block; }
+.emp-card { max-width: 480px; margin: 0 auto; }
+
+/* ── Employee weekly schedule ── */
+.sched-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.sched-label {
+  font-size: 14px; font-weight: 600; color: var(--text);
+}
+.btn-week-nav {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 14px;
+  color: var(--muted); font-size: 16px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn-week-nav:hover { color: var(--text); }
+.my-week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.my-day {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 4px;
+  text-align: center; font-size: 12px;
+  min-height: 90px;
+}
+.my-day-today  { border-color: var(--accent); background: rgba(108,99,255,.08); }
+.my-day-filled { border-color: var(--border); }
+.my-day-label  {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  margin-bottom: 6px; line-height: 1.4;
+}
+.my-day-today .my-day-label { color: var(--accent); }
+.my-day-in    { color: var(--green); font-size: 11px; font-weight: 600; line-height: 1.8; }
+.my-day-out   { color: var(--red);   font-size: 11px; font-weight: 600; line-height: 1.8; }
+.my-day-h     { color: var(--muted); font-size: 10px; margin-top: 2px; }
+.my-day-dash  { color: var(--border); font-size: 20px; line-height: 4; }
+.emp-week-total {
+  margin-top: 14px; text-align: center;
+  font-size: 14px; color: var(--muted);
+}
+.emp-week-total b { color: var(--text); }
+
 /* ── Pending screen ── */
 .btn-secondary {
   background: var(--surface2); color: var(--text);

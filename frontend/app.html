@@ -79,47 +79,74 @@
   </div>
 
   <!-- ── MAIN SCREEN ── -->
-  <div id="main-screen" class="screen">
-    <div class="card">
+  <div id="main-screen" class="screen emp-screen">
 
-      <!-- User info -->
-      <div class="user-info">
-        <div>
-          <div class="user-name" id="user-name">—</div>
-          <div class="user-role" id="user-role">Сотрудник</div>
+    <!-- Sticky header -->
+    <div class="emp-header">
+      <div>
+        <div class="user-name" id="user-name">—</div>
+        <div class="user-role" id="user-role">Сотрудник</div>
+      </div>
+      <button class="logout-btn" id="logout-btn" title="Выйти">Выйти →</button>
+    </div>
+
+    <!-- Tab nav -->
+    <div class="emp-tabs">
+      <button class="emp-tab active" id="etab-home"     onclick="switchEmpTab('home')">🏠 Главная</button>
+      <button class="emp-tab"        id="etab-schedule" onclick="switchEmpTab('schedule')">📅 Мой график</button>
+    </div>
+
+    <!-- ── Home tab ── -->
+    <div id="emp-page-home" class="emp-page active">
+      <div class="card emp-card">
+        <!-- Clock -->
+        <div class="time-display">
+          <div class="time" id="clock">--:--</div>
+          <div class="date" id="clock-date"></div>
         </div>
-        <button class="logout-btn" id="logout-btn" title="Выйти">Выйти →</button>
-      </div>
 
-      <!-- Clock -->
-      <div class="time-display">
-        <div class="time" id="clock">--:--</div>
-        <div class="date" id="clock-date"></div>
-      </div>
+        <!-- Status -->
+        <div style="text-align:center;">
+          <span class="status-badge unknown" id="status-badge">
+            <span class="dot"></span> Загрузка...
+          </span>
+        </div>
 
-      <!-- Status -->
-      <div style="text-align:center;">
-        <span class="status-badge unknown" id="status-badge">
-          <span class="dot"></span> Загрузка...
-        </span>
-      </div>
+        <div id="alert" class="alert"></div>
 
-      <div id="alert" class="alert"></div>
+        <!-- Action buttons -->
+        <div class="action-area">
+          <button id="btn-checkin"  class="btn btn-green" disabled>✅ Пришёл</button>
+          <button id="btn-checkout" class="btn btn-red"   disabled>🚪 Ушёл</button>
+        </div>
 
-      <!-- Action buttons -->
-      <div class="action-area">
-        <button id="btn-checkin" class="btn btn-green" disabled>✅ Пришёл</button>
-        <button id="btn-checkout" class="btn btn-red" disabled>🚪 Ушёл</button>
-      </div>
-
-      <!-- History -->
-      <div class="history-section">
-        <div class="history-title">История сегодня</div>
-        <ul class="history-list" id="history-list">
-          <li style="color:var(--muted);font-size:14px;padding:12px 0;">Загрузка...</li>
-        </ul>
+        <!-- History -->
+        <div class="history-section">
+          <div class="history-title">Последние отметки</div>
+          <ul class="history-list" id="history-list">
+            <li style="color:var(--muted);font-size:14px;padding:12px 0;">Загрузка...</li>
+          </ul>
+        </div>
       </div>
     </div>
+
+    <!-- ── Schedule tab ── -->
+    <div id="emp-page-schedule" class="emp-page">
+      <div class="card emp-card">
+        <div class="sched-nav">
+          <button class="btn-week-nav" onclick="empShiftWeek(-7)">←</button>
+          <span id="emp-week-label" class="sched-label">Загрузка...</span>
+          <button class="btn-week-nav" onclick="empShiftWeek(7)">→</button>
+        </div>
+
+        <div id="emp-sched-wrap">
+          <div style="text-align:center;color:var(--muted);padding:24px 0;">Загрузка...</div>
+        </div>
+
+        <div id="emp-week-total" class="emp-week-total"></div>
+      </div>
+    </div>
+
   </div>
 
   <script src="/static/app.js"></script>

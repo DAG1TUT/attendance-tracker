@@ -44,13 +44,33 @@ async function doLogout() {
 async function loadDashboard() {
   try {
     const s = await api('GET', '/admin/stats/today');
-    document.getElementById('stat-present').textContent = s.present.length;
+    // "На месте" = все кто пришёл (вовремя + опоздавшие)
+    document.getElementById('stat-present').textContent = s.present.length + s.late.length;
     document.getElementById('stat-absent').textContent = s.absent.length;
     document.getElementById('stat-late').textContent = s.late.length;
-    renderPeopleList('list-present', s.present, true);
+    renderPresentList('list-present', s.present, s.late);
     renderPeopleList('list-absent', s.absent, false);
     renderLateList('list-late', s.late);
   } catch (err) { console.error('Dashboard error:', err); }
+}
+
+function renderPresentList(elId, present, late) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const all = [
+    ...present.map(p => ({ ...p, isLate: false })),
+    ...late.map(p => ({ ...p, isLate: true })),
+  ].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+  if (!all.length) { el.innerHTML = '<div class="empty">Никого нет</div>'; return; }
+  el.innerHTML = all.map((p) => `
+    <div class="today-person">
+      <span>${p.name}</span>
+      <span class="today-time">
+        ${p.checked_in_at || ''}
+        ${p.isLate ? `<span class="badge badge-yellow" style="font-size:10px;margin-left:4px">+${p.late_minutes}м</span>` : ''}
+      </span>
+    </div>
+  `).join('');
 }
 
 function renderPeopleList(elId, people, showTime) {
@@ -66,10 +86,10 @@ function renderPeopleList(elId, people, showTime) {
 function renderLateList(elId, people) {
   const el = document.getElementById(elId);
   if (!el) return;
-  if (!people.length) { el.innerHTML = '<div class="empty">Нет опозданий</div>'; return; }
+  if (!people.length) { el.innerHTML = '<div class="empty">Опозданий нет 👍</div>'; return; }
   el.innerHTML = people.map((p) => `
     <div class="today-person"><span>${p.name}</span>
-    <span class="today-time">${p.checked_in_at} (+${p.late_minutes} мин)</span></div>
+    <span class="today-time">${p.checked_in_at} <span style="color:var(--yellow)">+${p.late_minutes} мин</span></span></div>
   `).join('');
 }
 

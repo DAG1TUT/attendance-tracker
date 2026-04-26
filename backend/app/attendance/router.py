@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -15,14 +17,14 @@ from app.telegram import notify_late, notify_suspicious
 
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
+_MOSCOW = ZoneInfo(settings.timezone)
+
 
 def _is_late(now: datetime) -> bool:
-    """Check if the current time is past the late threshold."""
-    threshold_minute = settings.late_threshold_minutes
-    threshold_hour = settings.shift_start_hour
-    # Calculate shift start + late threshold in minutes
-    total_minutes = threshold_hour * 60 + threshold_minute
-    current_minutes = now.hour * 60 + now.minute
+    """Check if current Moscow time is past the shift start threshold."""
+    now_moscow = now.astimezone(_MOSCOW)
+    total_minutes = settings.shift_start_hour * 60 + settings.late_threshold_minutes
+    current_minutes = now_moscow.hour * 60 + now_moscow.minute
     return current_minutes > total_minutes
 
 
@@ -176,6 +178,71 @@ async def get_status(
     if not row:
         return {"action": None, "since": None}
     return {"action": row["action"], "since": row["timestamp"]}
+
+
+@router.get("/week")
+async def get_my_week(
+    current_user: Annotated[dict, AnyRole],
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict:
+    """Employee's own weekly schedule."""
+    today = datetime.now(_MOSCOW).date()
+    if not date_from:
+        date_from = today - timedelta(days=today.weekday())  # Monday
+    if not date_to:
+        date_to = date_from + timedelta(days=6)
+
+    async with db.acquire() as conn:
+        logs = await conn.fetch(
+            """SELECT action, timestamp
+               FROM attendance_logs
+               WHERE user_id = $1
+                 AND (timestamp AT TIME ZONE $2)::date >= $3
+                 AND (timestamp AT TIME ZONE $2)::date <= $4
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY timestamp ASC""",
+            current_user["id"], settings.timezone, date_from, date_to,
+        )
+
+    dates = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+
+    day_logs: dict[date, list] = defaultdict(list)
+    for log in logs:
+        d = log["timestamp"].astimezone(_MOSCOW).date()
+        day_logs[d].append({"action": log["action"], "timestamp": log["timestamp"]})
+
+    cells = []
+    total_hours = 0.0
+    for d in dates:
+        events = sorted(day_logs.get(d, []), key=lambda x: x["timestamp"])
+        check_in_ts = check_out_ts = last_in = None
+        total_sec = 0.0
+        for ev in events:
+            if ev["action"] == "check_in":
+                if check_in_ts is None:
+                    check_in_ts = ev["timestamp"]
+                last_in = ev["timestamp"]
+            elif ev["action"] == "check_out" and last_in:
+                check_out_ts = ev["timestamp"]
+                total_sec += (ev["timestamp"] - last_in).total_seconds()
+                last_in = None
+        hours = round(total_sec / 3600, 1)
+        total_hours += hours
+        cells.append({
+            "date": d.isoformat(),
+            "check_in": check_in_ts.isoformat() if check_in_ts else None,
+            "check_out": check_out_ts.isoformat() if check_out_ts else None,
+            "hours": hours,
+        })
+
+    return {
+        "date_from": date_from.isoformat(),
+        "date_to": date_to.isoformat(),
+        "total_hours": round(total_hours, 1),
+        "days": cells,
+    }
 
 
 @router.get("/history", response_model=list[AttendanceLogOut])
