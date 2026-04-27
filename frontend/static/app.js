@@ -1,3 +1,19 @@
+// ── Phone helpers ─────────────────────────────────────────────────────────────
+function normalizePhone(raw) {
+  // Remove spaces, dashes, parentheses
+  let s = raw.replace(/[\s\-\(\)]/g, '').trim();
+  if ((s.startsWith('8') || s.startsWith('7')) && s.length === 11) {
+    s = '+7' + s.slice(1);
+  }
+  return s;
+}
+
+function validatePhone(raw) {
+  const s = normalizePhone(raw);
+  if (!/^\+7\d{10}$/.test(s)) return null;
+  return s;
+}
+
 // ── Device Fingerprint ────────────────────────────────────────────────────────
 function generateDeviceId() {
   const raw = [
@@ -235,9 +251,11 @@ async function doCheckOut() {
 // ── Login ─────────────────────────────────────────────────────────────────────
 async function doLogin(e) {
   e.preventDefault();
-  const phone = document.getElementById('phone').value.trim();
+  const rawPhone = document.getElementById('phone').value.trim();
   const password = document.getElementById('password').value;
-  if (!phone || !password) return showAlert('Введите телефон и пароль');
+  if (!rawPhone || !password) return showAlert('Введите телефон и пароль');
+  const phone = validatePhone(rawPhone);
+  if (!phone) return showAlert('Номер телефона должен начинаться с +7 или 8 и содержать 11 цифр');
   setLoading('btn-login', true);
   try {
     const res = await api('POST', '/auth/login', { phone, password, device_id: DEVICE_ID, user_agent: navigator.userAgent });
@@ -256,9 +274,11 @@ async function doLogin(e) {
 async function doRegister(e) {
   e.preventDefault();
   const name = document.getElementById('reg-name').value.trim();
-  const phone = document.getElementById('reg-phone').value.trim();
+  const rawPhone = document.getElementById('reg-phone').value.trim();
   const password = document.getElementById('reg-password').value;
-  if (!name || !phone || !password) return showAlert('Заполните все поля');
+  if (!name || !rawPhone || !password) return showAlert('Заполните все поля');
+  const phone = validatePhone(rawPhone);
+  if (!phone) return showAlert('Номер телефона должен начинаться с +7 или 8 и содержать 11 цифр');
   if (password.length < 6) return showAlert('Пароль минимум 6 символов');
   setLoading('btn-register', true);
   try {
