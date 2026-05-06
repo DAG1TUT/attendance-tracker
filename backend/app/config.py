@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     admin_bootstrap_secret: str = "CHANGE_THIS_TOO"
 
     # Network security (comma-separated CIDRs, empty = disabled)
-    allowed_networks: str = "192.168.0.0/16,10.0.0.0/8"
+    allowed_networks: str = "46.172.16.80/32"
 
     # Telegram
     telegram_bot_token: str = ""
