@@ -11,6 +11,7 @@ class EmployeeCreate(BaseModel):
     phone: str
     password: str
     role: str = "employee"
+    position: str = "employee"
     hourly_rate: Decimal = Decimal("150.00")
     bonus_percent: Decimal = Decimal("5.00")
 
@@ -20,6 +21,7 @@ class EmployeeUpdate(BaseModel):
     phone: str | None = None
     password: str | None = None
     role: str | None = None
+    position: str | None = None
     is_active: bool | None = None
     hourly_rate: Decimal | None = None
     bonus_percent: Decimal | None = None
@@ -30,6 +32,7 @@ class EmployeeOut(BaseModel):
     phone: str
     name: str
     role: str
+    position: str
     is_active: bool
     status: str
     hourly_rate: Decimal
@@ -85,6 +88,7 @@ class SalaryEntry(BaseModel):
     user_id: int
     name: str
     role: str
+    position: str
     hourly_rate: Decimal
     bonus_percent: Decimal
     hours_worked: float

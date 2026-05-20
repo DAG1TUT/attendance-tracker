@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.attendance.schemas import AttendanceLogOut, CheckRequest, StatusOut
 from app.config import settings
-from app.dependencies import AnyRole, LocalNetworkGuard, get_db, get_client_ip
+from app.dependencies import AnyRole, LocalNetworkGuard, get_current_user, get_db, get_client_ip
 from app.fraud import evaluate_fraud
 from app.telegram import notify_late, notify_suspicious
 
@@ -242,6 +243,64 @@ async def get_my_week(
         "date_to": date_to.isoformat(),
         "total_hours": round(total_hours, 1),
         "days": cells,
+    }
+
+
+@router.get("/my-salary")
+async def my_salary(
+    date_from: date,
+    date_to: date,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    current_user: Annotated[dict, Depends(get_current_user)],
+) -> dict:
+    """Employee views their own salary for a given period."""
+    user_id = current_user["id"]
+
+    async with db.acquire() as conn:
+        user_row = await conn.fetchrow(
+            "SELECT hourly_rate, bonus_percent FROM users WHERE id = $1",
+            user_id,
+        )
+        logs = await conn.fetch(
+            """SELECT action, timestamp
+               FROM attendance_logs
+               WHERE user_id = $1
+                 AND timestamp >= $2::date
+                 AND timestamp < ($3::date + INTERVAL '1 day')
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY timestamp ASC""",
+            user_id, date_from, date_to,
+        )
+        rev_row = await conn.fetchrow(
+            """SELECT COALESCE(SUM(amount), 0) AS total
+               FROM revenue_entries WHERE date >= $1 AND date <= $2""",
+            date_from, date_to,
+        )
+
+    total_revenue = Decimal(str(rev_row["total"]))
+    rate = Decimal(str(user_row["hourly_rate"]))
+    pct = Decimal(str(user_row["bonus_percent"]))
+
+    # Calculate hours worked
+    total_sec = 0.0
+    last_in = None
+    for ev in logs:
+        if ev["action"] == "check_in":
+            last_in = ev["timestamp"]
+        elif ev["action"] == "check_out" and last_in:
+            total_sec += (ev["timestamp"] - last_in).total_seconds()
+            last_in = None
+    hours_worked = round(total_sec / 3600, 2)
+
+    base_pay = (Decimal(str(hours_worked)) * rate).quantize(Decimal("0.01"))
+    bonus_pay = (total_revenue * pct / Decimal("100")).quantize(Decimal("0.01"))
+    total_pay = base_pay + bonus_pay
+
+    return {
+        "hours_worked": hours_worked,
+        "base_pay": float(base_pay),
+        "bonus_pay": float(bonus_pay),
+        "total_pay": float(total_pay),
     }
 
 

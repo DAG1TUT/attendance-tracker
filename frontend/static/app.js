@@ -51,6 +51,7 @@ function switchEmpTab(tab) {
   document.getElementById(`etab-${tab}`)?.classList.add('active');
   document.getElementById(`emp-page-${tab}`)?.classList.add('active');
   if (tab === 'schedule') loadMySchedule();
+  if (tab === 'salary') loadMySalary();
 }
 
 // ── Employee weekly schedule ──────────────────────────────────────────────────
@@ -125,6 +126,44 @@ function renderMySchedule(data) {
   if (totalEl) {
     totalEl.innerHTML = data.total_hours > 0
       ? `Итого за неделю: <b>${data.total_hours} ч</b>` : '';
+  }
+}
+
+// ── My Salary ─────────────────────────────────────────────────────────────────
+async function loadMySalary() {
+  const dateFrom = document.getElementById('my-sal-from').value;
+  const dateTo = document.getElementById('my-sal-to').value;
+  const result = document.getElementById('my-sal-result');
+  if (!result) return;
+  if (!dateFrom || !dateTo) {
+    result.innerHTML = '<div style="color:var(--muted);text-align:center;">Выберите период</div>';
+    return;
+  }
+  result.innerHTML = '<div style="text-align:center;color:var(--muted);">Загрузка...</div>';
+  try {
+    const data = await api('GET', `/attendance/my-salary?date_from=${dateFrom}&date_to=${dateTo}`);
+    result.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);">
+          <span style="color:var(--muted)">Отработано часов</span>
+          <b>${data.hours_worked} ч</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);">
+          <span style="color:var(--muted)">Оклад (ставка × часы)</span>
+          <b>${data.base_pay} ₽</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:14px;background:var(--bg);border-radius:10px;border:1px solid var(--border);">
+          <span style="color:var(--muted)">Бонус от выручки</span>
+          <b>${data.bonus_pay} ₽</b>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:16px;background:rgba(108,99,255,.15);border-radius:10px;border:1px solid var(--accent);">
+          <span style="font-weight:600;">Итого</span>
+          <b style="color:var(--accent);font-size:18px;">${data.total_pay} ₽</b>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    result.innerHTML = `<div style="color:var(--red);text-align:center;">${err.message}</div>`;
   }
 }
 
@@ -321,6 +360,15 @@ async function init() {
   document.getElementById('btn-checkin').addEventListener('click', doCheckIn);
   document.getElementById('btn-checkout').addEventListener('click', doCheckOut);
   document.getElementById('logout-btn').addEventListener('click', doLogout);
+
+  // Set default salary period (current month)
+  const now = new Date();
+  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const today = now.toISOString().split('T')[0];
+  const salFrom = document.getElementById('my-sal-from');
+  const salTo = document.getElementById('my-sal-to');
+  if (salFrom) salFrom.value = firstDay;
+  if (salTo) salTo.value = today;
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, time as dt_time, timedelta, timezone
 from decimal import Decimal
+from io import BytesIO
 from typing import Annotated
 from zoneinfo import ZoneInfo
 
 import asyncpg
+import openpyxl
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 
 from app.admin.schemas import (
     AdminLogOut,
@@ -43,7 +47,7 @@ async def list_pending(
 ) -> list[dict]:
     async with db.acquire() as conn:
         rows = await conn.fetch(
-            """SELECT id, phone, name, role, is_active, status,
+            """SELECT id, phone, name, role, position, is_active, status,
                       hourly_rate, bonus_percent, created_at
                FROM users WHERE status = 'pending' ORDER BY created_at"""
         )
@@ -60,7 +64,7 @@ async def approve_employee(
         row = await conn.fetchrow(
             """UPDATE users SET status = 'active'
                WHERE id = $1 AND status = 'pending'
-               RETURNING id, phone, name, role, is_active, status,
+               RETURNING id, phone, name, role, position, is_active, status,
                          hourly_rate, bonus_percent, created_at""",
             employee_id,
         )
@@ -98,7 +102,7 @@ async def list_employees(
         conditions.append(f"is_active = ${len(args) + 1}")
         args.append(is_active)
     where = "WHERE " + " AND ".join(conditions)
-    query = f"""SELECT id, phone, name, role, is_active, status,
+    query = f"""SELECT id, phone, name, role, position, is_active, status,
                        hourly_rate, bonus_percent, created_at
                 FROM users {where} ORDER BY name"""
     async with db.acquire() as conn:
@@ -118,12 +122,12 @@ async def create_employee(
             raise HTTPException(status_code=409, detail="Телефон уже занят")
 
         row = await conn.fetchrow(
-            """INSERT INTO users (phone, name, password_hash, role, hourly_rate, bonus_percent, status)
-               VALUES ($1, $2, $3, $4, $5, $6, 'active')
-               RETURNING id, phone, name, role, is_active, status,
+            """INSERT INTO users (phone, name, password_hash, role, position, hourly_rate, bonus_percent, status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+               RETURNING id, phone, name, role, position, is_active, status,
                          hourly_rate, bonus_percent, created_at""",
             body.phone, body.name, hash_password(body.password),
-            body.role, body.hourly_rate, body.bonus_percent,
+            body.role, body.position, body.hourly_rate, body.bonus_percent,
         )
     return dict(row)
 
@@ -144,8 +148,8 @@ async def update_employee(
         idx = 1
         for field, value in {
             "name": body.name, "phone": body.phone, "role": body.role,
-            "is_active": body.is_active, "hourly_rate": body.hourly_rate,
-            "bonus_percent": body.bonus_percent,
+            "position": body.position, "is_active": body.is_active,
+            "hourly_rate": body.hourly_rate, "bonus_percent": body.bonus_percent,
         }.items():
             if value is not None:
                 updates.append(f"{field} = ${idx}"); args.append(value); idx += 1
@@ -158,7 +162,7 @@ async def update_employee(
         args.append(employee_id)
         row = await conn.fetchrow(
             f"""UPDATE users SET {', '.join(updates)} WHERE id = ${idx}
-                RETURNING id, phone, name, role, is_active, status,
+                RETURNING id, phone, name, role, position, is_active, status,
                           hourly_rate, bonus_percent, created_at""",
             *args,
         )
@@ -327,7 +331,88 @@ async def list_revenue(
     return [dict(r) for r in rows]
 
 
+@router.get("/revenue/export")
+async def export_revenue(
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> StreamingResponse:
+    conditions, args = [], []
+    idx = 1
+    if date_from:
+        conditions.append(f"date >= ${idx}"); args.append(date_from); idx += 1
+    if date_to:
+        conditions.append(f"date <= ${idx}"); args.append(date_to); idx += 1
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    async with db.acquire() as conn:
+        rows = await conn.fetch(
+            f"SELECT id, date, amount, note, created_at FROM revenue_entries {where} ORDER BY date ASC",
+            *args,
+        )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Выручка"
+
+    from openpyxl.styles import Font, PatternFill, Alignment
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="6C63FF")
+    header_alignment = Alignment(horizontal="center")
+
+    headers = ["Дата", "Выручка (₽)", "Примечание"]
+    ws.append(headers)
+    for col_idx, _ in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    total_amount = Decimal("0")
+    for r in rows:
+        ws.append([
+            r["date"].strftime("%d.%m.%Y"),
+            float(r["amount"]),
+            r["note"] or "",
+        ])
+        total_amount += Decimal(str(r["amount"]))
+
+    # ИТОГО row
+    total_row = ws.max_row + 1
+    ws.cell(row=total_row, column=1, value="ИТОГО").font = Font(bold=True)
+    ws.cell(row=total_row, column=2, value=float(total_amount)).font = Font(bold=True)
+
+    ws.column_dimensions["A"].width = 14
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 30
+    ws.freeze_panes = "A2"
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"revenue_{date_from or 'all'}_{date_to or 'all'}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ── Salary calculation ────────────────────────────────────────────────────────
+
+def _calc_hours_from_logs(user_logs: dict[int, list], user_id: int) -> float:
+    events = user_logs.get(user_id, [])
+    total_sec = 0.0
+    last_in = None
+    for ev in sorted(events, key=lambda e: e["timestamp"]):
+        if ev["action"] == "check_in":
+            last_in = ev["timestamp"]
+        elif ev["action"] == "check_out" and last_in:
+            total_sec += (ev["timestamp"] - last_in).total_seconds()
+            last_in = None
+    return round(total_sec / 3600, 2)
+
 
 @router.get("/salary", response_model=SalaryReport)
 async def calculate_salary(
@@ -338,7 +423,7 @@ async def calculate_salary(
 ) -> dict:
     async with db.acquire() as conn:
         employees = await conn.fetch(
-            """SELECT id, name, role, hourly_rate, bonus_percent
+            """SELECT id, name, role, position, hourly_rate, bonus_percent
                FROM users
                WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
                ORDER BY name"""
@@ -365,26 +450,16 @@ async def calculate_salary(
     for log in logs:
         user_logs.setdefault(log["user_id"], []).append(log)
 
-    def calc_hours(events: list) -> float:
-        total_sec = 0.0
-        last_in = None
-        for ev in sorted(events, key=lambda e: e["timestamp"]):
-            if ev["action"] == "check_in":
-                last_in = ev["timestamp"]
-            elif ev["action"] == "check_out" and last_in:
-                total_sec += (ev["timestamp"] - last_in).total_seconds()
-                last_in = None
-        return round(total_sec / 3600, 2)
-
     result = []
     for emp in employees:
-        hours = calc_hours(user_logs.get(emp["id"], []))
+        hours = _calc_hours_from_logs(user_logs, emp["id"])
         rate = Decimal(str(emp["hourly_rate"]))
         pct = Decimal(str(emp["bonus_percent"]))
         base = (Decimal(str(hours)) * rate).quantize(Decimal("0.01"))
         bonus = (total_revenue * pct / Decimal("100")).quantize(Decimal("0.01"))
         result.append(SalaryEntry(
             user_id=emp["id"], name=emp["name"], role=emp["role"],
+            position=emp["position"],
             hourly_rate=rate, bonus_percent=pct,
             hours_worked=hours, base_pay=base, bonus_pay=bonus,
             total_pay=(base + bonus),
@@ -393,6 +468,112 @@ async def calculate_salary(
     return SalaryReport(
         date_from=date_from, date_to=date_to,
         total_revenue=total_revenue, employees=result,
+    )
+
+
+@router.get("/salary/export")
+async def export_salary(
+    date_from: date,
+    date_to: date,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> StreamingResponse:
+    async with db.acquire() as conn:
+        employees = await conn.fetch(
+            """SELECT id, name, role, position, hourly_rate, bonus_percent
+               FROM users
+               WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
+               ORDER BY name"""
+        )
+        logs = await conn.fetch(
+            """SELECT user_id, action, timestamp
+               FROM attendance_logs
+               WHERE timestamp >= $1::date
+                 AND timestamp < ($2::date + INTERVAL '1 day')
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY user_id, timestamp ASC""",
+            date_from, date_to,
+        )
+        rev_row = await conn.fetchrow(
+            """SELECT COALESCE(SUM(amount), 0) AS total
+               FROM revenue_entries WHERE date >= $1 AND date <= $2""",
+            date_from, date_to,
+        )
+
+    total_revenue = Decimal(str(rev_row["total"]))
+    user_logs: dict[int, list] = {}
+    for log in logs:
+        user_logs.setdefault(log["user_id"], []).append(log)
+
+    POSITION_RU = {
+        "employee": "Сотрудник", "runner": "Ранер",
+        "cook": "Повар", "barman": "Бармен", "admin": "Администратор",
+    }
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Зарплата"
+
+    from openpyxl.styles import Font, PatternFill, Alignment
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="6C63FF")
+    header_alignment = Alignment(horizontal="center")
+
+    headers = ["Имя", "Должность", "Ставка ₽/ч", "Бонус %", "Часы", "Оклад", "Бонус", "Итого"]
+    ws.append(headers)
+    for col_idx, _ in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    total_base = Decimal("0")
+    total_bonus_sum = Decimal("0")
+    total_all = Decimal("0")
+
+    for emp in employees:
+        hours = _calc_hours_from_logs(user_logs, emp["id"])
+        rate = Decimal(str(emp["hourly_rate"]))
+        pct = Decimal(str(emp["bonus_percent"]))
+        base = (Decimal(str(hours)) * rate).quantize(Decimal("0.01"))
+        bonus = (total_revenue * pct / Decimal("100")).quantize(Decimal("0.01"))
+        total_pay = base + bonus
+        total_base += base
+        total_bonus_sum += bonus
+        total_all += total_pay
+
+        ws.append([
+            emp["name"],
+            POSITION_RU.get(emp["position"], emp["position"]),
+            float(rate),
+            float(pct),
+            hours,
+            float(base),
+            float(bonus),
+            float(total_pay),
+        ])
+
+    # ИТОГО row
+    total_row = ws.max_row + 1
+    ws.cell(row=total_row, column=1, value="ИТОГО").font = Font(bold=True)
+    ws.cell(row=total_row, column=6, value=float(total_base)).font = Font(bold=True)
+    ws.cell(row=total_row, column=7, value=float(total_bonus_sum)).font = Font(bold=True)
+    ws.cell(row=total_row, column=8, value=float(total_all)).font = Font(bold=True)
+
+    col_widths = [22, 18, 12, 10, 8, 12, 12, 12]
+    for i, w in enumerate(col_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"salary_{date_from}_{date_to}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
 
@@ -505,7 +686,6 @@ async def stats_week(
         )
 
     # Group logs by user_id → date (Moscow) → list
-    from collections import defaultdict
     user_day: dict[int, dict[date, list]] = defaultdict(lambda: defaultdict(list))
     for log in logs:
         ts_moscow = log["timestamp"].astimezone(tz)
@@ -540,6 +720,103 @@ async def stats_week(
         result.append(WeekScheduleEntry(user_id=emp["id"], name=emp["name"], days=days))
 
     return WeekSchedule(date_from=date_from, date_to=date_to, dates=dates, employees=result)
+
+
+@router.get("/stats/week/export")
+async def export_schedule(
+    date_from: date,
+    date_to: date,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, AdminOnly],
+) -> StreamingResponse:
+    tz = ZoneInfo(settings.timezone)
+    dates = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
+
+    async with db.acquire() as conn:
+        employees = await conn.fetch(
+            """SELECT id, name FROM users
+               WHERE is_active = TRUE AND status = 'active' AND role = 'employee'
+               ORDER BY name"""
+        )
+        logs = await conn.fetch(
+            """SELECT user_id, action, timestamp
+               FROM attendance_logs
+               WHERE (timestamp AT TIME ZONE $1)::date >= $2
+                 AND (timestamp AT TIME ZONE $1)::date <= $3
+                 AND action IN ('check_in', 'check_out')
+               ORDER BY user_id, timestamp ASC""",
+            settings.timezone, date_from, date_to,
+        )
+
+    user_day: dict[int, dict[date, list]] = defaultdict(lambda: defaultdict(list))
+    for log in logs:
+        ts_moscow = log["timestamp"].astimezone(tz)
+        user_day[log["user_id"]][ts_moscow.date()].append(
+            {"action": log["action"], "timestamp": log["timestamp"]}
+        )
+
+    from openpyxl.styles import Font, PatternFill, Alignment
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "График"
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="6C63FF")
+    header_alignment = Alignment(horizontal="center")
+
+    # Header row: Сотрудник | date1 | date2 | ... | Итого ч
+    header = ["Сотрудник"] + [d.strftime("%d.%m") for d in dates] + ["Итого ч"]
+    ws.append(header)
+    for col_idx, _ in enumerate(header, 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+
+    for emp in employees:
+        row_data = [emp["name"]]
+        total_hours = 0.0
+        for d in dates:
+            day_logs = sorted(user_day[emp["id"]].get(d, []), key=lambda x: x["timestamp"])
+            check_in_ts = check_out_ts = last_in = None
+            total_sec = 0.0
+            for ev in day_logs:
+                if ev["action"] == "check_in":
+                    if check_in_ts is None:
+                        check_in_ts = ev["timestamp"]
+                    last_in = ev["timestamp"]
+                elif ev["action"] == "check_out" and last_in:
+                    check_out_ts = ev["timestamp"]
+                    total_sec += (ev["timestamp"] - last_in).total_seconds()
+                    last_in = None
+            hours = round(total_sec / 3600, 1)
+            total_hours += hours
+            if check_in_ts or check_out_ts:
+                in_str = check_in_ts.astimezone(tz).strftime("%H:%M") if check_in_ts else "—"
+                out_str = check_out_ts.astimezone(tz).strftime("%H:%M") if check_out_ts else "—"
+                cell_val = f"{in_str} - {out_str} / {hours}ч"
+            else:
+                cell_val = "—"
+            row_data.append(cell_val)
+        row_data.append(round(total_hours, 1))
+        ws.append(row_data)
+
+    ws.column_dimensions["A"].width = 22
+    for i, _ in enumerate(dates, 2):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(i)].width = 20
+    ws.column_dimensions[openpyxl.utils.get_column_letter(len(dates) + 2)].width = 10
+    ws.freeze_panes = "B2"
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    fname = f"schedule_{date_from}_{date_to}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 # ── Edit attendance day (admin manual edit) ───────────────────────────────────

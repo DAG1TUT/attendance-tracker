@@ -18,7 +18,8 @@ function showTab(tab) {
   document.getElementById(`bn-${tab}`)?.classList.add('active');
   if (tab === 'dashboard') loadDashboard();
   if (tab === 'employees') loadEmployees();
-  if (tab === 'salary') { loadRevenue(); initSalaryDates(); }
+  if (tab === 'salary') initSalaryDates();
+  if (tab === 'revenue') { loadRevenue(); initRevenueDate(); }
   if (tab === 'logs') loadLogs();
   if (tab === 'schedule') loadSchedule();
   if (tab === 'suspicious') loadSuspicious();
@@ -143,19 +144,25 @@ async function rejectEmployee(id, name) {
 }
 
 // ── Employees ─────────────────────────────────────────────────────────────────
+const POSITION_LABELS = {
+  employee: 'Сотрудник', runner: 'Ранер', cook: 'Повар',
+  barman: 'Бармен', admin: 'Администратор',
+};
+
 async function loadEmployees() {
   await loadPending();
   const tbody = document.getElementById('employees-tbody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="7" class="empty">Загрузка...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="8" class="empty">Загрузка...</td></tr>';
   try {
     const employees = await api('GET', '/admin/employees');
-    if (!employees.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">Нет сотрудников</td></tr>'; return; }
+    if (!employees.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">Нет сотрудников</td></tr>'; return; }
     tbody.innerHTML = employees.map((e) => `
       <tr>
         <td>${e.name}</td>
         <td>${e.phone}</td>
         <td><span class="badge ${e.role === 'admin' ? 'badge-blue' : 'badge-green'}">${e.role === 'admin' ? 'Админ' : 'Сотрудник'}</span></td>
+        <td>${POSITION_LABELS[e.position] || e.position}</td>
         <td>${Number(e.hourly_rate).toLocaleString('ru-RU')} ₽</td>
         <td>${Number(e.bonus_percent)}%</td>
         <td><span class="badge ${e.is_active ? 'badge-green' : 'badge-red'}">${e.is_active ? 'Активен' : 'Отключён'}</span></td>
@@ -166,7 +173,7 @@ async function loadEmployees() {
       </tr>
     `).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">Ошибка: ${err.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">Ошибка: ${err.message}</td></tr>`;
   }
 }
 
@@ -177,6 +184,7 @@ function openCreateModal() {
   document.getElementById('emp-phone').value = '';
   document.getElementById('emp-password').value = '';
   document.getElementById('emp-role').value = 'employee';
+  document.getElementById('emp-position').value = 'employee';
   document.getElementById('emp-rate').value = '150';
   document.getElementById('emp-bonus').value = '5';
   document.getElementById('emp-active-group').style.display = 'none';
@@ -191,6 +199,7 @@ function editEmployee(e) {
   document.getElementById('emp-phone').value = e.phone;
   document.getElementById('emp-password').value = '';
   document.getElementById('emp-role').value = e.role;
+  document.getElementById('emp-position').value = e.position || 'employee';
   document.getElementById('emp-rate').value = Number(e.hourly_rate);
   document.getElementById('emp-bonus').value = Number(e.bonus_percent);
   document.getElementById('emp-active').checked = e.is_active;
@@ -209,6 +218,7 @@ async function saveEmployee() {
   const phone = document.getElementById('emp-phone').value.trim();
   const password = document.getElementById('emp-password').value;
   const role = document.getElementById('emp-role').value;
+  const position = document.getElementById('emp-position').value;
   const hourly_rate = parseFloat(document.getElementById('emp-rate').value);
   const bonus_percent = parseFloat(document.getElementById('emp-bonus').value);
 
@@ -217,12 +227,12 @@ async function saveEmployee() {
 
   try {
     if (id) {
-      const body = { name, phone, role, hourly_rate, bonus_percent, is_active: document.getElementById('emp-active').checked };
+      const body = { name, phone, role, position, hourly_rate, bonus_percent, is_active: document.getElementById('emp-active').checked };
       if (password) body.password = password;
       await api('PATCH', `/admin/employees/${id}`, body);
     } else {
       if (!password) return showAlert('Пароль обязателен', 'error', 'alert-emp');
-      await api('POST', '/admin/employees', { name, phone, password, role, hourly_rate, bonus_percent });
+      await api('POST', '/admin/employees', { name, phone, password, role, position, hourly_rate, bonus_percent });
     }
     closeEmpModal();
     showAlert('Сохранено', 'success');
@@ -240,19 +250,37 @@ async function deleteEmployee(id, name) {
 }
 
 // ── Revenue ───────────────────────────────────────────────────────────────────
+function thirtyDaysAgo() {
+  const d = new Date(); d.setDate(d.getDate() - 30);
+  return d.toISOString().split('T')[0];
+}
+
+function initRevenueDate() {
+  const revDate = document.getElementById('rev-date');
+  if (revDate && !revDate.value) revDate.value = new Date().toISOString().split('T')[0];
+}
+
 async function loadRevenue() {
   const tbody = document.getElementById('revenue-tbody');
   if (!tbody) return;
   try {
     const items = await api('GET', '/admin/revenue?date_from=' + thirtyDaysAgo());
     if (!items.length) { tbody.innerHTML = '<tr><td colspan="3" class="empty">Нет данных</td></tr>'; return; }
-    tbody.innerHTML = items.map((r) => `
-      <tr>
+    let total = 0;
+    const rows = items.map((r) => {
+      total += Number(r.amount);
+      return `<tr>
         <td>${new Date(r.date + 'T00:00:00').toLocaleDateString('ru-RU')}</td>
         <td>${Number(r.amount).toLocaleString('ru-RU')} ₽</td>
         <td style="color:var(--muted)">${r.note || '—'}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    });
+    rows.push(`<tr style="font-weight:600;">
+      <td>ИТОГО</td>
+      <td>${total.toLocaleString('ru-RU')} ₽</td>
+      <td></td>
+    </tr>`);
+    tbody.innerHTML = rows.join('');
   } catch {}
 }
 
@@ -268,20 +296,24 @@ async function saveRevenue() {
   } catch (err) { showAlert(err.message); }
 }
 
-// ── Salary ────────────────────────────────────────────────────────────────────
-function thirtyDaysAgo() {
-  const d = new Date(); d.setDate(d.getDate() - 30);
-  return d.toISOString().split('T')[0];
+function exportRevenue() {
+  const params = new URLSearchParams({ date_from: thirtyDaysAgo() });
+  window.location.href = `/api/v1/admin/revenue/export?${params}`;
 }
 
+// ── Salary ────────────────────────────────────────────────────────────────────
 function initSalaryDates() {
   const from = document.getElementById('sal-date-from');
   const to = document.getElementById('sal-date-to');
   if (from && !from.value) from.value = thirtyDaysAgo();
   if (to && !to.value) to.value = new Date().toISOString().split('T')[0];
+}
 
-  const revDate = document.getElementById('rev-date');
-  if (revDate && !revDate.value) revDate.value = new Date().toISOString().split('T')[0];
+function exportSalary() {
+  const dateFrom = document.getElementById('sal-date-from').value;
+  const dateTo = document.getElementById('sal-date-to').value;
+  if (!dateFrom || !dateTo) return showAlert('Выберите период');
+  window.location.href = `/api/v1/admin/salary/export?date_from=${dateFrom}&date_to=${dateTo}`;
 }
 
 async function calcSalary() {
@@ -414,14 +446,11 @@ async function loadSuspicious() {
 }
 
 // ── Schedule / Weekly table ───────────────────────────────────────────────────
-let _schedWeekStart = null; // ISO date string "YYYY-MM-DD"
-
-function getMonday(dateStr) {
-  const d = dateStr ? new Date(dateStr) : new Date();
+function getMonday(d = new Date()) {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().split('T')[0];
+  const mon = new Date(d); mon.setDate(d.getDate() + diff);
+  return mon.toISOString().split('T')[0];
 }
 
 function addDays(isoStr, n) {
@@ -430,21 +459,25 @@ function addDays(isoStr, n) {
   return d.toISOString().split('T')[0];
 }
 
-function shiftWeek(delta) {
-  _schedWeekStart = addDays(_schedWeekStart, delta);
-  loadSchedule();
+function initScheduleDates() {
+  const fromEl = document.getElementById('sched-date-from');
+  const toEl = document.getElementById('sched-date-to');
+  if (fromEl && !fromEl.value) fromEl.value = getMonday();
+  if (toEl && !toEl.value) toEl.value = addDays(getMonday(), 6);
+}
+
+function exportSchedule() {
+  const dateFrom = document.getElementById('sched-date-from').value;
+  const dateTo = document.getElementById('sched-date-to').value;
+  if (!dateFrom || !dateTo) return showAlert('Выберите период');
+  window.location.href = `/api/v1/admin/stats/week/export?date_from=${dateFrom}&date_to=${dateTo}`;
 }
 
 async function loadSchedule() {
-  if (!_schedWeekStart) _schedWeekStart = getMonday();
-  const dateFrom = _schedWeekStart;
-  const dateTo   = addDays(_schedWeekStart, 6);
-
-  const d1 = new Date(dateFrom);
-  const d2 = new Date(dateTo);
-  const fmt = (d) => d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-  const lbl = document.getElementById('week-label');
-  if (lbl) lbl.textContent = `${fmt(d1)} — ${fmt(d2)}`;
+  initScheduleDates();
+  const dateFrom = document.getElementById('sched-date-from').value;
+  const dateTo = document.getElementById('sched-date-to').value;
+  if (!dateFrom || !dateTo) return;
 
   const wrap = document.getElementById('schedule-wrap');
   if (wrap) wrap.innerHTML = '<div class="empty">Загрузка...</div>';
@@ -555,6 +588,21 @@ async function clearAttDay() {
   }
 }
 
+// ── Position auto-rate ────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const posEl = document.getElementById('emp-position');
+  if (posEl) {
+    posEl.addEventListener('change', () => {
+      const rates = { employee: 150, runner: 150, cook: 200, barman: 200, admin: 250 };
+      const pos = posEl.value;
+      // Only set if creating new employee (no id)
+      if (!document.getElementById('emp-id').value) {
+        document.getElementById('emp-rate').value = rates[pos] || 150;
+      }
+    });
+  }
+});
+
 // ── Polling ───────────────────────────────────────────────────────────────────
 function startPolling() {
   setInterval(() => {
@@ -573,9 +621,9 @@ async function init() {
     const mob = document.getElementById('mobile-admin-name');
     if (mob) mob.textContent = me.name;
   } catch { window.location.href = '/app.html'; return; }
-  const today = new Date().toISOString().split('T')[0];
-  const schedDate = document.getElementById('sched-date');
-  if (schedDate) schedDate.value = today;
+
+  // Set default schedule dates
+  initScheduleDates();
 
   showTab('dashboard');
   startPolling();
