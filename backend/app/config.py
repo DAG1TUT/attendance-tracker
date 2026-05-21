@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     # Telegram
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_webhook_secret: str = ""          # Secret for webhook verification
+    telegram_allowed_users: str = ""           # Comma-separated allowed Telegram user IDs (empty = only telegram_chat_id)
 
     # Shift config
     shift_start_hour: int = 10
