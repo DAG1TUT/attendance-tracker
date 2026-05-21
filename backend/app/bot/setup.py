@@ -14,7 +14,7 @@ async def register_webhook(base_url: str) -> dict:
     webhook_url = f"{base_url.rstrip('/')}/api/v1/telegram/webhook"
     url = f"https://api.telegram.org/bot{settings.telegram_bot_token}/setWebhook"
 
-    payload: dict = {"url": webhook_url, "allowed_updates": ["message"]}
+    payload: dict = {"url": webhook_url, "allowed_updates": ["message", "edited_message"]}
     if settings.telegram_webhook_secret:
         payload["secret_token"] = settings.telegram_webhook_secret
 

@@ -103,6 +103,42 @@ async def debug_ip(request: Request) -> dict:
     }
 
 
+async def _transcribe_voice(file_id: str) -> str | None:
+    """Download a Telegram voice file and transcribe it with OpenAI Whisper."""
+    if not settings.openai_api_key:
+        return None
+    try:
+        import io
+        from openai import AsyncOpenAI
+
+        tg_api = f"https://api.telegram.org/bot{settings.telegram_bot_token}"
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Step 1: get file path
+            r = await client.get(f"{tg_api}/getFile", params={"file_id": file_id})
+            file_path = r.json().get("result", {}).get("file_path")
+            if not file_path:
+                return None
+            # Step 2: download audio bytes
+            r2 = await client.get(
+                f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}"
+            )
+            audio_bytes = r2.content
+
+        # Step 3: transcribe with Whisper
+        openai = AsyncOpenAI(api_key=settings.openai_api_key)
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = "voice.ogg"
+        transcript = await openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            language="ru",
+        )
+        return transcript.text.strip()
+    except Exception as exc:
+        logger.warning("Voice transcription failed: %s", exc)
+        return None
+
+
 @app.post("/api/v1/telegram/webhook")
 async def telegram_webhook(request: Request) -> dict:
     """Receive updates from Telegram."""
@@ -123,21 +159,41 @@ async def telegram_webhook(request: Request) -> dict:
 
     chat_id = message.get("chat", {}).get("id")
     user_id = message.get("from", {}).get("id")
-    text = message.get("text", "").strip()
 
-    if not chat_id or not text:
+    if not chat_id:
         return {"ok": True}
 
-    # Check allowed users
+    # Check allowed users first (before heavy processing)
     allowed = settings.telegram_allowed_users.strip()
     if allowed:
         allowed_ids = {u.strip() for u in allowed.split(",")}
         if str(user_id) not in allowed_ids and str(chat_id) not in allowed_ids:
             return {"ok": True}  # Silently ignore unauthorized users
     elif settings.telegram_chat_id:
-        # Fall back to the existing chat_id setting
         if str(chat_id) != str(settings.telegram_chat_id) and str(user_id) != str(settings.telegram_chat_id):
             return {"ok": True}
+
+    # Resolve input text — either plain text or transcribed voice
+    text = message.get("text", "").strip()
+
+    if not text:
+        voice = message.get("voice") or message.get("audio")
+        if voice:
+            file_id = voice.get("file_id")
+            if file_id:
+                await send_message(chat_id, "🎙 Распознаю голосовое сообщение…")
+                text = await _transcribe_voice(file_id)
+                if not text:
+                    await send_message(
+                        chat_id,
+                        "❌ Не удалось распознать голосовое. Проверьте, что настроен OPENAI_API_KEY."
+                        if not settings.openai_api_key
+                        else "❌ Не удалось распознать голосовое сообщение. Попробуйте ещё раз.",
+                    )
+                    return {"ok": True}
+
+    if not text:
+        return {"ok": True}
 
     # Process message
     try:
