@@ -21,7 +21,7 @@ function showTab(tab) {
   if (tab === 'salary') initSalaryDates();
   if (tab === 'revenue') { loadRevenue(); initRevenueDate(); }
   if (tab === 'logs') loadLogs();
-  if (tab === 'schedule') loadSchedule();
+  if (tab === 'schedule') initScheduleDates();
   if (tab === 'suspicious') loadSuspicious();
 }
 
@@ -474,10 +474,13 @@ function exportSchedule() {
 }
 
 async function loadSchedule() {
-  initScheduleDates();
   const dateFrom = document.getElementById('sched-date-from').value;
   const dateTo = document.getElementById('sched-date-to').value;
-  if (!dateFrom || !dateTo) return;
+  if (!dateFrom || !dateTo) {
+    const wrap = document.getElementById('schedule-wrap');
+    if (wrap) wrap.innerHTML = '<div class="empty">Выберите период и нажмите «Показать»</div>';
+    return;
+  }
 
   const wrap = document.getElementById('schedule-wrap');
   if (wrap) wrap.innerHTML = '<div class="empty">Загрузка...</div>';

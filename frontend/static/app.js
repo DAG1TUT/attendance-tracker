@@ -271,7 +271,12 @@ async function doCheckIn() {
     const res = await api('POST', '/attendance/check-in', { device_id: DEVICE_ID, user_agent: navigator.userAgent });
     showAlert(res.message || 'Приход зафиксирован', 'success');
     await loadStatus(); await loadHistory();
-  } catch (err) { showAlert(err.message); }
+  } catch (err) {
+    const msg = err.message.includes('сети кафе')
+      ? '📶 Отметка доступна только из Wi-Fi сети кафе'
+      : err.message;
+    showAlert(msg);
+  }
   finally { setLoading('btn-checkin', false); }
 }
 
@@ -283,7 +288,12 @@ async function doCheckOut() {
     const h = Math.floor(dur / 60), m = dur % 60;
     showAlert(`Уход зафиксирован. Отработано: ${h > 0 ? h + ' ч ' : ''}${m} мин`, 'success');
     await loadStatus(); await loadHistory();
-  } catch (err) { showAlert(err.message); }
+  } catch (err) {
+    const msg = err.message.includes('сети кафе')
+      ? '📶 Отметка доступна только из Wi-Fi сети кафе'
+      : err.message;
+    showAlert(msg);
+  }
   finally { setLoading('btn-checkout', false); }
 }
 
