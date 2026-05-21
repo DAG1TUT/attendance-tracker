@@ -40,7 +40,7 @@ async def get_current_user(
 
     async with db.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, phone, name, role, is_active, status FROM users WHERE id = $1",
+            "SELECT id, phone, name, role, is_active, status, is_owner, permissions FROM users WHERE id = $1",
             int(user_id),
         )
 
@@ -66,6 +66,15 @@ def require_role(*roles: str):
 
 AdminOnly = Depends(require_role("admin"))
 AnyRole = Depends(get_current_user)
+
+
+async def _require_owner(current_user: Annotated[dict, Depends(get_current_user)]) -> dict:
+    if not current_user.get("is_owner"):
+        raise HTTPException(status_code=403, detail="Только владелец может выполнить это действие")
+    return current_user
+
+
+OwnerOnly = Depends(_require_owner)
 
 
 # ── Network guard ─────────────────────────────────────────────────────────────

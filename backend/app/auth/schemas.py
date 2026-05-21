@@ -68,3 +68,5 @@ class UserOut(BaseModel):
     name: str
     role: str
     status: str = "active"
+    is_owner: bool = False
+    permissions: dict | None = None

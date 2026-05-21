@@ -49,8 +49,8 @@ async def bootstrap(
 
         await conn.execute(
             """
-            INSERT INTO users (phone, name, password_hash, role)
-            VALUES ($1, $2, $3, 'admin')
+            INSERT INTO users (phone, name, password_hash, role, is_owner)
+            VALUES ($1, $2, $3, 'admin', TRUE)
             """,
             body.phone,
             body.name,
@@ -92,7 +92,7 @@ async def login(
 ) -> dict:
     async with db.acquire() as conn:
         user = await conn.fetchrow(
-            "SELECT id, name, password_hash, role, is_active, status FROM users WHERE phone = $1",
+            "SELECT id, name, password_hash, role, is_active, status, is_owner, permissions FROM users WHERE phone = $1",
             body.phone.strip(),
         )
 
@@ -124,6 +124,8 @@ async def login(
         "role": user["role"],
         "name": user["name"],
         "user_id": user["id"],
+        "is_owner": user["is_owner"],
+        "permissions": user["permissions"],
     }
 
 

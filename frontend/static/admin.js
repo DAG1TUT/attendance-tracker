@@ -1,3 +1,40 @@
+// ── Current user (set in init) ────────────────────────────────────────────────
+let _currentUser = null; // { is_owner, permissions, role, name }
+
+// ── Permission helper ─────────────────────────────────────────────────────────
+function hasPerm(key) {
+  if (!_currentUser) return false;
+  if (_currentUser.is_owner) return true;
+  if (_currentUser.role !== 'admin') return false;
+  // NULL permissions = full access for admins
+  if (!_currentUser.permissions) return true;
+  return !!_currentUser.permissions[key];
+}
+
+// ── Apply permissions to UI ───────────────────────────────────────────────────
+function applyPermissionsToUI() {
+  const tabPerms = {
+    'nav-dashboard': 'dashboard', 'nav-employees': 'employees_view',
+    'nav-salary': 'salary_view', 'nav-revenue': 'revenue_view',
+    'nav-logs': 'logs_view', 'nav-schedule': 'schedule_view',
+    'nav-suspicious': 'suspicious_view',
+    'bn-dashboard': 'dashboard', 'bn-employees': 'employees_view',
+    'bn-salary': 'salary_view', 'bn-revenue': 'revenue_view',
+    'bn-logs': 'logs_view', 'bn-schedule': 'schedule_view',
+    'bn-suspicious': 'suspicious_view',
+  };
+  for (const [id, perm] of Object.entries(tabPerms)) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = hasPerm(perm) ? '' : 'none';
+  }
+  // Hide add employee button if no manage perm
+  const addBtn = document.querySelector('[onclick="openCreateModal()"]');
+  if (addBtn) addBtn.style.display = hasPerm('employees_manage') ? '' : 'none';
+  // Hide save revenue if no revenue_manage
+  const saveRevBtn = document.querySelector('[onclick="saveRevenue()"]');
+  if (saveRevBtn) saveRevBtn.style.display = hasPerm('revenue_manage') ? '' : 'none';
+}
+
 // ── API ───────────────────────────────────────────────────────────────────────
 async function api(method, path, body = null) {
   const opts = { method, credentials: 'include', headers: {} };
@@ -10,6 +47,17 @@ async function api(method, path, body = null) {
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function showTab(tab) {
+  // Permission check
+  const tabPerms = {
+    dashboard: 'dashboard', employees: 'employees_view',
+    salary: 'salary_view', revenue: 'revenue_view',
+    logs: 'logs_view', schedule: 'schedule_view',
+    suspicious: 'suspicious_view',
+  };
+  if (tabPerms[tab] && !hasPerm(tabPerms[tab])) {
+    showAlert('У вас нет доступа к этому разделу');
+    return;
+  }
   document.querySelectorAll('.tab-page').forEach((p) => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach((n) => n.classList.remove('active'));
   document.querySelectorAll('.bn-item').forEach((n) => n.classList.remove('active'));
@@ -157,21 +205,28 @@ async function loadEmployees() {
   try {
     const employees = await api('GET', '/admin/employees');
     if (!employees.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">Нет сотрудников</td></tr>'; return; }
-    tbody.innerHTML = employees.map((e) => `
-      <tr>
-        <td>${e.name}</td>
-        <td>${e.phone}</td>
-        <td><span class="badge ${e.role === 'admin' ? 'badge-blue' : 'badge-green'}">${e.role === 'admin' ? 'Админ' : 'Сотрудник'}</span></td>
-        <td>${POSITION_LABELS[e.position] || e.position}</td>
-        <td>${Number(e.hourly_rate).toLocaleString('ru-RU')} ₽</td>
-        <td>${Number(e.bonus_percent)}%</td>
-        <td><span class="badge ${e.is_active ? 'badge-green' : 'badge-red'}">${e.is_active ? 'Активен' : 'Отключён'}</span></td>
-        <td>
-          <button class="btn btn-ghost btn-sm" onclick='editEmployee(${JSON.stringify(e)})'>Изменить</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${e.id}, '${e.name}')">Удалить</button>
-        </td>
-      </tr>
-    `).join('');
+    tbody.innerHTML = employees.map((e) => {
+      const permsBtn = _currentUser?.is_owner && e.role === 'admin'
+        ? `<button class="btn btn-ghost btn-sm" onclick="openPermsModal(${e.id},'${e.name.replace(/'/g, "\\'")}')">🔐 Права</button>`
+        : '';
+      const ownerBadge = e.is_owner ? ' <span class="badge badge-yellow" style="font-size:10px;">👑</span>' : '';
+      return `
+        <tr>
+          <td>${e.name}${ownerBadge}</td>
+          <td>${e.phone}</td>
+          <td><span class="badge ${e.role === 'admin' ? 'badge-blue' : 'badge-green'}">${e.role === 'admin' ? 'Админ' : 'Сотрудник'}</span></td>
+          <td>${POSITION_LABELS[e.position] || e.position}</td>
+          <td>${Number(e.hourly_rate).toLocaleString('ru-RU')} ₽</td>
+          <td>${Number(e.bonus_percent)}%</td>
+          <td><span class="badge ${e.is_active ? 'badge-green' : 'badge-red'}">${e.is_active ? 'Активен' : 'Отключён'}</span></td>
+          <td>
+            <button class="btn btn-ghost btn-sm" onclick='editEmployee(${JSON.stringify(e)})'>Изменить</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteEmployee(${e.id}, '${e.name}')">Удалить</button>
+            ${permsBtn}
+          </td>
+        </tr>
+      `;
+    }).join('');
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="8" class="empty">Ошибка: ${err.message}</td></tr>`;
   }
@@ -615,20 +670,108 @@ function startPolling() {
   }, 30000);
 }
 
+// ── Permissions modal ─────────────────────────────────────────────────────────
+const PERM_LABELS = {
+  dashboard: 'Сводка за сегодня',
+  employees_view: 'Просмотр сотрудников',
+  employees_manage: 'Управление сотрудниками (добавить/удалить/изменить)',
+  salary_view: 'Просмотр зарплаты',
+  revenue_view: 'Просмотр выручки',
+  revenue_manage: 'Ввод / редактирование выручки',
+  logs_view: 'История отметок',
+  schedule_view: 'Просмотр графика',
+  schedule_edit: 'Редактирование ячеек графика',
+  suspicious_view: 'Подозрительные события',
+};
+
+async function openPermsModal(userId, name) {
+  document.getElementById('perms-user-id').value = userId;
+  document.getElementById('perms-modal-name').textContent = name;
+  document.getElementById('alert-perms').classList.remove('show');
+
+  try {
+    const data = await api('GET', `/admin/employees/${userId}/permissions`);
+    const currentPerms = data.permissions; // null = full access
+
+    const list = document.getElementById('perms-list');
+    list.innerHTML = Object.entries(PERM_LABELS).map(([key, label]) => {
+      const checked = currentPerms === null ? true : !!currentPerms[key];
+      return `
+        <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);cursor:pointer;">
+          <input type="checkbox" id="perm-${key}" ${checked ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent);" />
+          <span style="font-size:14px;">${label}</span>
+        </label>
+      `;
+    }).join('');
+
+    document.getElementById('perms-modal').classList.add('open');
+  } catch (err) {
+    showAlert('Ошибка загрузки прав: ' + err.message);
+  }
+}
+
+function closePermsModal() {
+  document.getElementById('perms-modal').classList.remove('open');
+}
+
+function setFullAccess() {
+  Object.keys(PERM_LABELS).forEach(key => {
+    const el = document.getElementById(`perm-${key}`);
+    if (el) el.checked = true;
+  });
+}
+
+async function savePermissions() {
+  const userId = document.getElementById('perms-user-id').value;
+  const permissions = {};
+  let allTrue = true;
+
+  Object.keys(PERM_LABELS).forEach(key => {
+    const el = document.getElementById(`perm-${key}`);
+    permissions[key] = el ? el.checked : true;
+    if (!permissions[key]) allTrue = false;
+  });
+
+  // If all true, send null (full access = default)
+  const body = { permissions: allTrue ? null : permissions };
+
+  try {
+    await api('PUT', `/admin/employees/${userId}/permissions`, body);
+    showAlert('Права сохранены', 'success');
+    closePermsModal();
+  } catch (err) {
+    showAlert('Ошибка: ' + err.message, 'error', 'alert-perms');
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   try {
     const me = await api('GET', '/auth/me');
     if (me.role !== 'admin') { window.location.href = '/app.html'; return; }
+    _currentUser = me;
     document.getElementById('admin-name').textContent = me.name;
     const mob = document.getElementById('mobile-admin-name');
     if (mob) mob.textContent = me.name;
   } catch { window.location.href = '/app.html'; return; }
 
+  // Apply permissions to UI
+  applyPermissionsToUI();
+
   // Set default schedule dates
   initScheduleDates();
 
-  showTab('dashboard');
+  // Find first tab the user has access to
+  const tabOrder = ['dashboard', 'employees', 'salary', 'revenue', 'logs', 'schedule', 'suspicious'];
+  const tabPermMap = {
+    dashboard: 'dashboard', employees: 'employees_view',
+    salary: 'salary_view', revenue: 'revenue_view',
+    logs: 'logs_view', schedule: 'schedule_view',
+    suspicious: 'suspicious_view',
+  };
+  const firstAllowed = tabOrder.find(t => hasPerm(tabPermMap[t]));
+  showTab(firstAllowed || 'dashboard');
+
   startPolling();
 }
 

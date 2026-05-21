@@ -38,6 +38,12 @@ class EmployeeOut(BaseModel):
     hourly_rate: Decimal
     bonus_percent: Decimal
     created_at: datetime
+    is_owner: bool = False
+    permissions: dict | None = None
+
+
+class PermissionsUpdate(BaseModel):
+    permissions: dict | None = None  # None = full access (reset to default)
 
 
 class AdminLogOut(BaseModel):

@@ -20,6 +20,7 @@ from app.admin.schemas import (
     EmployeeCreate,
     EmployeeOut,
     EmployeeUpdate,
+    PermissionsUpdate,
     RevenueOut,
     RevenueUpsert,
     SalaryEntry,
@@ -33,7 +34,7 @@ from app.admin.schemas import (
 )
 from app.auth.service import hash_password
 from app.config import settings
-from app.dependencies import AdminOnly, get_db
+from app.dependencies import AdminOnly, OwnerOnly, get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -48,7 +49,7 @@ async def list_pending(
     async with db.acquire() as conn:
         rows = await conn.fetch(
             """SELECT id, phone, name, role, position, is_active, status,
-                      hourly_rate, bonus_percent, created_at
+                      hourly_rate, bonus_percent, created_at, is_owner, permissions
                FROM users WHERE status = 'pending' ORDER BY created_at"""
         )
     return [dict(r) for r in rows]
@@ -65,7 +66,7 @@ async def approve_employee(
             """UPDATE users SET status = 'active'
                WHERE id = $1 AND status = 'pending'
                RETURNING id, phone, name, role, position, is_active, status,
-                         hourly_rate, bonus_percent, created_at""",
+                         hourly_rate, bonus_percent, created_at, is_owner, permissions""",
             employee_id,
         )
     if not row:
@@ -103,7 +104,7 @@ async def list_employees(
         args.append(is_active)
     where = "WHERE " + " AND ".join(conditions)
     query = f"""SELECT id, phone, name, role, position, is_active, status,
-                       hourly_rate, bonus_percent, created_at
+                       hourly_rate, bonus_percent, created_at, is_owner, permissions
                 FROM users {where} ORDER BY name"""
     async with db.acquire() as conn:
         rows = await conn.fetch(query, *args)
@@ -125,7 +126,7 @@ async def create_employee(
             """INSERT INTO users (phone, name, password_hash, role, position, hourly_rate, bonus_percent, status)
                VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
                RETURNING id, phone, name, role, position, is_active, status,
-                         hourly_rate, bonus_percent, created_at""",
+                         hourly_rate, bonus_percent, created_at, is_owner, permissions""",
             body.phone, body.name, hash_password(body.password),
             body.role, body.position, body.hourly_rate, body.bonus_percent,
         )
@@ -163,7 +164,7 @@ async def update_employee(
         row = await conn.fetchrow(
             f"""UPDATE users SET {', '.join(updates)} WHERE id = ${idx}
                 RETURNING id, phone, name, role, position, is_active, status,
-                          hourly_rate, bonus_percent, created_at""",
+                          hourly_rate, bonus_percent, created_at, is_owner, permissions""",
             *args,
         )
     return dict(row)
@@ -180,6 +181,65 @@ async def delete_employee(
     if result == "DELETE 0":
         raise HTTPException(status_code=404, detail="Сотрудник не найден")
     return {"message": "Удалено"}
+
+
+# ── Permissions (owner only) ───────────────────────────────────────────────────
+
+@router.get("/employees/{employee_id}/permissions")
+async def get_permissions(
+    employee_id: int,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, OwnerOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, name, is_owner, permissions FROM users WHERE id = $1", employee_id
+        )
+    if not row:
+        raise HTTPException(404, "Не найден")
+    return {
+        "user_id": row["id"],
+        "name": row["name"],
+        "is_owner": row["is_owner"],
+        "permissions": row["permissions"],
+    }
+
+
+@router.put("/employees/{employee_id}/permissions")
+async def set_permissions(
+    employee_id: int,
+    body: PermissionsUpdate,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    current_user: Annotated[dict, OwnerOnly],
+) -> dict:
+    import json
+    async with db.acquire() as conn:
+        target = await conn.fetchrow("SELECT id, is_owner FROM users WHERE id = $1", employee_id)
+        if not target:
+            raise HTTPException(404, "Не найден")
+        if target["is_owner"] and target["id"] != current_user["id"]:
+            raise HTTPException(403, "Нельзя изменять права другого владельца")
+
+        perms_json = json.dumps(body.permissions) if body.permissions is not None else None
+        await conn.execute(
+            "UPDATE users SET permissions = $1::jsonb WHERE id = $2",
+            perms_json, employee_id,
+        )
+    return {"message": "Права обновлены"}
+
+
+@router.post("/employees/{employee_id}/make-owner")
+async def make_owner(
+    employee_id: int,
+    db: Annotated[asyncpg.Pool, Depends(get_db)],
+    _: Annotated[dict, OwnerOnly],
+) -> dict:
+    async with db.acquire() as conn:
+        row = await conn.fetchrow("SELECT role FROM users WHERE id = $1", employee_id)
+        if not row or row["role"] != "admin":
+            raise HTTPException(400, "Только администратор может стать владельцем")
+        await conn.execute("UPDATE users SET is_owner = TRUE WHERE id = $1", employee_id)
+    return {"message": "Пользователь назначен владельцем"}
 
 
 # ── Logs ──────────────────────────────────────────────────────────────────────

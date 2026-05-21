@@ -126,6 +126,7 @@
           <tbody id="employees-tbody">
             <tr><td colspan="8" class="empty">Загрузка...</td></tr>
           </tbody>
+          <!-- Note: colspan is kept at 8; the Права button is added inline in the Действия cell -->
         </table>
       </div>
     </div>
@@ -362,6 +363,26 @@
       <div style="flex:1"></div>
       <button class="btn btn-ghost" onclick="closeAttModal()">Отмена</button>
       <button class="btn btn-primary" onclick="saveAttDay()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Permissions Modal ── -->
+<div id="perms-modal" class="modal-overlay">
+  <div class="modal" style="max-width:480px;">
+    <h3>🔐 Права доступа — <span id="perms-modal-name"></span></h3>
+    <div id="alert-perms" class="alert"></div>
+    <input type="hidden" id="perms-user-id" />
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">
+      Если все галочки сняты — доступ к этим разделам закрыт.
+      Нажмите «Полный доступ» чтобы выдать все права.
+    </p>
+    <div id="perms-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+    <div class="modal-actions" style="margin-top:20px;">
+      <button class="btn btn-ghost" onclick="setFullAccess()">✅ Полный доступ</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="closePermsModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="savePermissions()">Сохранить</button>
     </div>
   </div>
 </div>
