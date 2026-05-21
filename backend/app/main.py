@@ -106,6 +106,7 @@ async def debug_ip(request: Request) -> dict:
 async def _transcribe_voice(file_id: str) -> str | None:
     """Download a Telegram voice file and transcribe it with OpenAI Whisper."""
     if not settings.openai_api_key:
+        logger.warning("Voice: OPENAI_API_KEY not set")
         return None
     try:
         import io
@@ -113,29 +114,42 @@ async def _transcribe_voice(file_id: str) -> str | None:
 
         tg_api = f"https://api.telegram.org/bot{settings.telegram_bot_token}"
         async with httpx.AsyncClient(timeout=30.0) as client:
-            # Step 1: get file path
+            # Step 1: get file path from Telegram
             r = await client.get(f"{tg_api}/getFile", params={"file_id": file_id})
-            file_path = r.json().get("result", {}).get("file_path")
+            result = r.json()
+            logger.info("Voice getFile response: %s", result)
+            file_path = result.get("result", {}).get("file_path")
             if not file_path:
+                logger.warning("Voice: no file_path in getFile response")
                 return None
+
             # Step 2: download audio bytes
-            r2 = await client.get(
-                f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}"
-            )
+            download_url = f"https://api.telegram.org/file/bot{settings.telegram_bot_token}/{file_path}"
+            r2 = await client.get(download_url)
             audio_bytes = r2.content
+            logger.info("Voice: downloaded %d bytes, status=%s", len(audio_bytes), r2.status_code)
+
+        if not audio_bytes:
+            logger.warning("Voice: empty audio bytes")
+            return None
 
         # Step 3: transcribe with Whisper
-        openai = AsyncOpenAI(api_key=settings.openai_api_key)
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = "voice.ogg"
-        transcript = await openai.audio.transcriptions.create(
+        # Determine extension from file_path (Telegram sends .oga for voice)
+        ext = file_path.rsplit(".", 1)[-1] if "." in file_path else "ogg"
+        filename = f"voice.{ext}"
+
+        openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        transcript = await openai_client.audio.transcriptions.create(
             model="whisper-1",
-            file=audio_file,
+            file=(filename, io.BytesIO(audio_bytes), "audio/ogg"),
             language="ru",
         )
-        return transcript.text.strip()
+        text = transcript.text.strip()
+        logger.info("Voice: transcribed → %r", text)
+        return text or None
+
     except Exception as exc:
-        logger.warning("Voice transcription failed: %s", exc)
+        logger.error("Voice transcription failed: %s", exc, exc_info=True)
         return None
 
 
