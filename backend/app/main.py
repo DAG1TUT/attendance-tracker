@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_pool(settings.database_url)
+
+    # Auto-register Telegram webhook using Railway's public domain
+    railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+    if railway_domain and settings.telegram_bot_token:
+        try:
+            from app.bot.setup import register_webhook
+            result = await register_webhook(f"https://{railway_domain}")
+            logger.info("Telegram webhook registered: %s", result)
+        except Exception as exc:
+            logger.warning("Telegram webhook registration failed: %s", exc)
+
     yield
     await close_pool()
 

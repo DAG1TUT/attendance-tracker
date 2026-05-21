@@ -1,6 +1,7 @@
-"""Telegram bot message handler."""
+"""Telegram bot message handler with optional OpenAI NL understanding."""
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from datetime import date, timedelta
@@ -35,11 +36,222 @@ def _contains(text: str, *words) -> bool:
     return any(w in text for w in words)
 
 
+# ── OpenAI tool definitions ────────────────────────────────────────────────────
+
+_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today_stats",
+            "description": "Показать сводку за сегодня: кто пришёл, опоздал, отсутствует",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today_late",
+            "description": "Кто опоздал сегодня",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_today_absent",
+            "description": "Кто отсутствует / не вышел сегодня",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_attendance",
+            "description": "Кто работал в указанный день или период",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "description": (
+                            "Период на русском: 'сегодня', 'вчера', 'эта неделя', "
+                            "'прошлая неделя', 'этот месяц', 'прошлый месяц', "
+                            "или конкретная дата/диапазон 'с 01.05 по 15.05'"
+                        ),
+                    }
+                },
+                "required": ["period"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_salary",
+            "description": "Расчёт зарплаты сотрудников за период",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "description": "Период на русском (как в get_attendance)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Имя конкретного сотрудника (если нужен один)",
+                    },
+                },
+                "required": ["period"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_revenue",
+            "description": "Показать выручку за период",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "description": "Период на русском (как в get_attendance)",
+                    }
+                },
+                "required": ["period"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_schedule",
+            "description": "Показать график / часы работы сотрудников за период",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": {
+                        "type": "string",
+                        "description": "Период на русском (как в get_attendance)",
+                    }
+                },
+                "required": ["period"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_employees",
+            "description": "Список всех активных сотрудников с должностями и ставками",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "show_help",
+            "description": "Показать справку — что умеет бот",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
+
 class BotHandler:
     def __init__(self, db: asyncpg.Pool):
         self.db = db
 
     async def handle(self, text: str) -> str:
+        # Try OpenAI first if API key is configured
+        if settings.openai_api_key:
+            try:
+                return await self._handle_openai(text)
+            except Exception as exc:
+                logger.warning("OpenAI handling failed, falling back to keywords: %s", exc)
+
+        return await self._handle_keywords(text)
+
+    # ── OpenAI path ───────────────────────────────────────────────────────────
+
+    async def _handle_openai(self, text: str) -> str:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=settings.openai_api_key)
+
+        today = now_moscow()
+        system_prompt = (
+            f"Ты — умный ассистент для кафе, отвечаешь на вопросы о посещаемости, "
+            f"зарплате, выручке и расписании сотрудников. "
+            f"Сегодня {today.strftime('%d.%m.%Y')} ({['понедельник','вторник','среда','четверг','пятница','суббота','воскресенье'][today.weekday()]}).\n"
+            f"Используй функции чтобы получить нужные данные. "
+            f"Для периодов всегда передавай строку на русском языке."
+        )
+
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": text},
+            ],
+            tools=_TOOLS,
+            tool_choice="auto",
+            temperature=0,
+        )
+
+        msg = response.choices[0].message
+
+        # No tool call — just text response
+        if not msg.tool_calls:
+            return msg.content or "🤔 Не понял вопрос. Напишите /help"
+
+        # Execute all tool calls (usually just one)
+        results = []
+        for tc in msg.tool_calls:
+            fn = tc.function.name
+            try:
+                args = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except json.JSONDecodeError:
+                args = {}
+
+            result = await self._dispatch(fn, args)
+            results.append(result)
+
+        return "\n\n".join(results)
+
+    async def _dispatch(self, fn: str, args: dict) -> str:
+        """Route OpenAI function call to actual handler."""
+        period = args.get("period", "сегодня")
+
+        if fn == "get_today_stats":
+            return await self._today_stats()
+        elif fn == "get_today_late":
+            return await self._today_late()
+        elif fn == "get_today_absent":
+            return await self._today_absent()
+        elif fn == "get_attendance":
+            d_from, d_to = parse_date_range(period)
+            return await self._attendance_for_period(d_from, d_to)
+        elif fn == "get_salary":
+            d_from, d_to = parse_date_range(period)
+            name = args.get("name")
+            return await self._salary_report(d_from, d_to, name)
+        elif fn == "get_revenue":
+            d_from, d_to = parse_date_range(period)
+            return await self._revenue_report(d_from, d_to)
+        elif fn == "get_schedule":
+            d_from, d_to = parse_date_range(period)
+            return await self._schedule_report(d_from, d_to)
+        elif fn == "get_employees":
+            return await self._employees_list()
+        elif fn == "show_help":
+            return self._help()
+        else:
+            return "❌ Неизвестная команда."
+
+    # ── Keyword fallback ──────────────────────────────────────────────────────
+
+    async def _handle_keywords(self, text: str) -> str:
         t = text.lower().strip()
 
         # ── Help ──

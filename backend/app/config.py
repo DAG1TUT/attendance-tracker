@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     telegram_webhook_secret: str = ""          # Secret for webhook verification
     telegram_allowed_users: str = ""           # Comma-separated allowed Telegram user IDs (empty = only telegram_chat_id)
 
+    # OpenAI (for smarter bot NL understanding)
+    openai_api_key: str = ""
+
     # Shift config
     shift_start_hour: int = 10
     late_threshold_minutes: int = 0
