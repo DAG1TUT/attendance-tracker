@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class EmployeeCreate(BaseModel):
@@ -40,6 +41,16 @@ class EmployeeOut(BaseModel):
     created_at: datetime
     is_owner: bool = False
     permissions: dict | None = None
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def parse_permissions(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except Exception:
+                return None
+        return v
 
 
 class PermissionsUpdate(BaseModel):

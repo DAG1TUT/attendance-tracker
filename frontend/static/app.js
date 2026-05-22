@@ -315,7 +315,14 @@ async function doLogin(e) {
     document.getElementById('user-role').textContent = 'Сотрудник';
     showScreen('main-screen');
     await loadStatus(); await loadHistory();
-  } catch (err) { showAlert(err.message); }
+  } catch (err) {
+    const msg = err.message || '';
+    if (msg.includes('ожидает подтверждения')) {
+      showAlert('⏳ Ваш аккаунт ещё не подтверждён. Обратитесь к администратору.', 'info');
+    } else {
+      showAlert(msg);
+    }
+  }
   finally { setLoading('btn-login', false); }
 }
 
@@ -361,8 +368,13 @@ async function init() {
     document.getElementById('user-role').textContent = 'Сотрудник';
     showScreen('main-screen');
     await loadStatus(); await loadHistory();
-  } catch {
+  } catch (err) {
     showScreen('login-screen');
+    // If user is pending approval, show a helpful message instead of blank login
+    const msg = err && err.message ? err.message : '';
+    if (msg.includes('ожидает подтверждения')) {
+      showAlert('⏳ Ваш аккаунт ожидает подтверждения администратора. Обратитесь к нему напрямую.', 'info');
+    }
   }
 
   document.getElementById('login-form').addEventListener('submit', doLogin);

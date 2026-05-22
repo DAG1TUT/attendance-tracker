@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 
 from pydantic import BaseModel, field_validator
@@ -70,3 +71,13 @@ class UserOut(BaseModel):
     status: str = "active"
     is_owner: bool = False
     permissions: dict | None = None
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def parse_permissions(cls, v):
+        if isinstance(v, str):
+            try:
+                return json.loads(v)
+            except Exception:
+                return None
+        return v
