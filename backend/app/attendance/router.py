@@ -38,17 +38,19 @@ async def check_in(
 ) -> dict:
     ip_address = get_client_ip(request)
     user_id = current_user["id"]
+    today = datetime.now(_MOSCOW).date()
 
     async with db.acquire() as conn:
-        # Prevent duplicate check-in
+        # Prevent duplicate check-in — only check TODAY's records
         last_log = await conn.fetchrow(
             """
             SELECT action FROM attendance_logs
             WHERE user_id = $1
+              AND (timestamp AT TIME ZONE $2)::date = $3
             ORDER BY timestamp DESC
             LIMIT 1
             """,
-            user_id,
+            user_id, settings.timezone, today,
         )
         if last_log and last_log["action"] == "check_in":
             raise HTTPException(
@@ -105,16 +107,19 @@ async def check_out(
 ) -> dict:
     ip_address = get_client_ip(request)
     user_id = current_user["id"]
+    today = datetime.now(_MOSCOW).date()
 
     async with db.acquire() as conn:
+        # Only look at TODAY's records to find the last check-in
         last_log = await conn.fetchrow(
             """
             SELECT id, action, timestamp FROM attendance_logs
             WHERE user_id = $1
+              AND (timestamp AT TIME ZONE $2)::date = $3
             ORDER BY timestamp DESC
             LIMIT 1
             """,
-            user_id,
+            user_id, settings.timezone, today,
         )
         if not last_log or last_log["action"] == "check_out":
             raise HTTPException(
@@ -166,15 +171,17 @@ async def get_status(
     current_user: Annotated[dict, AnyRole],
     db: Annotated[asyncpg.Pool, Depends(get_db)],
 ) -> dict:
+    today = datetime.now(_MOSCOW).date()
     async with db.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT action, timestamp FROM attendance_logs
             WHERE user_id = $1
+              AND (timestamp AT TIME ZONE $2)::date = $3
             ORDER BY timestamp DESC
             LIMIT 1
             """,
-            current_user["id"],
+            current_user["id"], settings.timezone, today,
         )
     if not row:
         return {"action": None, "since": None}
